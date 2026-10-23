@@ -400,7 +400,8 @@ def _visible_locator(page, selectors: list[str], timeout_ms: int = 1500):
         try:
             if loc.is_visible(timeout=timeout_ms):
                 return loc
-        except Exception:
+        except Exception as _ignored_exc:
+            logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
             continue
     return None
 
@@ -420,7 +421,8 @@ def _visible_textbox_locator(page, timeout_ms: int = 1500):
         try:
             if loc.is_visible(timeout=timeout_ms):
                 return loc
-        except Exception:
+        except Exception as _ignored_exc:
+            logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
             continue
     return None
 
@@ -1828,7 +1830,8 @@ def _human_complete_profile(page, name: str, birthday: str) -> dict:
                     _human_click_locator(box, timeout=1500)
                     checkbox_count += 1
                     _human_pause(0.25, 0.7)
-            except Exception:
+            except Exception as _ignored_exc:
+                logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
                 continue
     except Exception as _ignored_exc:
         logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
@@ -2185,7 +2188,8 @@ def _pick_live_page(context, preferred=None):
             try:
                 if not p.is_closed():
                     pages.append(p)
-            except Exception:
+            except Exception as _ignored_exc:
+                logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
                 continue
     except Exception as _ignored_exc:
         logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
@@ -2272,7 +2276,8 @@ def _browser_use_heartbeat(page, context=None, label: str = ""):
             try:
                 if live.is_closed():
                     continue
-            except Exception:
+            except Exception as _ignored_exc:
+                logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
                 continue
             return live
         return None

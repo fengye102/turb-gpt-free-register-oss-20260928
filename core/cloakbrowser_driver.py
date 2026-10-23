@@ -233,7 +233,8 @@ class CloakSeleniumDriver:
         for proc in self._iter_child_processes():
             try:
                 name = (proc.name() or "").lower()
-            except Exception:
+            except Exception as _ignored_exc:
+                logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
                 continue
             if not any(token in name for token in ("chrome", "chromium", "headless", "cloak")):
                 continue

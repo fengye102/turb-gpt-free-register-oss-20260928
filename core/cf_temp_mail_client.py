@@ -358,7 +358,8 @@ def _message_timestamp(item: dict) -> float | None:
             if dt.tzinfo is None:
                 dt = dt.replace(tzinfo=timezone.utc)
             return dt.timestamp()
-        except Exception:
+        except Exception as _ignored_exc:
+            logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
             continue
     return None
 

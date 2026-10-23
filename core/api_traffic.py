@@ -67,7 +67,8 @@ def _upload_size(kwargs: dict) -> int:
                 total += len(_json.dumps(value, ensure_ascii=False).encode("utf-8", "replace"))
             elif isinstance(value, dict):
                 total += sum(len(str(k)) + len(str(v)) for k, v in value.items())
-        except Exception:
+        except Exception as _ignored_exc:
+            logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
             continue
     return total
 

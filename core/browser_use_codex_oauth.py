@@ -145,7 +145,8 @@ def _extract_callback_url_from_context(context, page=None) -> str:
             found = _extract_callback_url_from_page(p)
             if found:
                 return found
-        except Exception:
+        except Exception as _ignored_exc:
+            logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
             continue
     return ""
 
@@ -231,7 +232,8 @@ def _visible_locator_any_frame(page, selectors: list[str], timeout_ms: int = 100
                     continue
                 if loc.is_visible(timeout=timeout_ms):
                     return loc
-            except Exception:
+            except Exception as _ignored_exc:
+                logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
                 continue
     return None
 
@@ -321,7 +323,8 @@ def _js_fill_email_fallback(page, email: str) -> bool:
         try:
             if frame.evaluate(script, email):
                 return True
-        except Exception:
+        except Exception as _ignored_exc:
+            logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
             continue
     return False
 
@@ -387,7 +390,8 @@ def _click_email_entry_fast(page) -> bool:
         try:
             if frame.evaluate(script):
                 return True
-        except Exception:
+        except Exception as _ignored_exc:
+            logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
             continue
     return False
 
@@ -422,7 +426,8 @@ def _fill_email_fast(page, email: str) -> bool:
         try:
             if frame.evaluate(script, email):
                 return True
-        except Exception:
+        except Exception as _ignored_exc:
+            logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
             continue
     return False
 
@@ -483,7 +488,8 @@ def _submit_visible_form_or_enter(page) -> bool:
         try:
             if frame.evaluate(script):
                 return True
-        except Exception:
+        except Exception as _ignored_exc:
+            logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
             continue
     try:
         page.keyboard.press("Enter")
@@ -1020,7 +1026,8 @@ def _force_set_phone_value(page, phone_e164: str) -> bool:
         try:
             if frame.evaluate(script, phone_e164):
                 return True
-        except Exception:
+        except Exception as _ignored_exc:
+            logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
             continue
     return False
 
@@ -1155,7 +1162,8 @@ def _click_phone_continue(page) -> bool:
         try:
             if frame.evaluate(script):
                 return True
-        except Exception:
+        except Exception as _ignored_exc:
+            logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
             continue
     return _click_first_any_frame(
         page,

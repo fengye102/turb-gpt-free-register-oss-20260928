@@ -313,7 +313,8 @@ def _session_cookies(session: BrowserSession) -> list[dict]:
                             or name.startswith("__Secure-"),
                 "sameSite": "Lax",
             })
-        except Exception:
+        except Exception as _ignored_exc:
+            logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
             continue
     return out
 

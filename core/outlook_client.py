@@ -475,7 +475,8 @@ def _get_msg_text(msg) -> str:
                     continue
                 charset = part.get_content_charset() or "utf-8"
                 text = payload.decode(charset, errors="replace")
-            except Exception:
+            except Exception as _ignored_exc:
+                logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
                 continue
             if ctype == "text/plain":
                 text_parts.append(text)
@@ -1155,7 +1156,8 @@ def _parse_email_ts(item: dict) -> float | None:
                 return datetime.strptime(raw, fmt).timestamp()
             base_fmt = fmt[: fmt.index("%f") - 1] if "%f" in fmt else fmt
             return float(calendar.timegm(time.strptime(raw[:19] if len(raw) >= 19 else raw, base_fmt)))
-        except Exception:
+        except Exception as _ignored_exc:
+            logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
             continue
     return None
 

@@ -1149,7 +1149,8 @@ def _find_single_otp_input(driver):
     for selector in _otp_input_selectors():
         try:
             els = [e for e in driver.find_elements(By.CSS_SELECTOR, selector) if _visible(e)]
-        except Exception:
+        except Exception as _ignored_exc:
+            logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
             continue
         if len(els) == 1:
             return els[0]
@@ -1171,7 +1172,8 @@ def _collect_otp_boxes(driver) -> list:
                 str(e.get_attribute(k) or "")
                 for k in ("inputmode", "autocomplete", "aria-label", "name", "id", "type")
             )
-        except Exception:
+        except Exception as _ignored_exc:
+            logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
             continue
         if any(x in attrs.lower() for x in ("numeric", "one-time", "code", "otp", "tel")):
             numeric_boxes.append(e)
@@ -2283,7 +2285,8 @@ def _switch_to_chatgpt_window_if_any(driver) -> bool:
                 driver.switch_to.window(handle)
                 if "chatgpt.com" in str(getattr(driver, "current_url", "") or ""):
                     return True
-            except Exception:
+            except Exception as _ignored_exc:
+                logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
                 continue
         if current_handle is not None:
             try:

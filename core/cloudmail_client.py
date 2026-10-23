@@ -327,7 +327,8 @@ def _parse_time(raw) -> float | None:
         try:
             # 文档标注 createTime 为 UTC。
             return datetime.strptime(text.replace("Z", ""), fmt).replace(tzinfo=timezone.utc).timestamp()
-        except ValueError:
+        except ValueError as _ignored_exc:
+            logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
             continue
     try:
         return datetime.fromisoformat(text.replace("Z", "+00:00")).timestamp()

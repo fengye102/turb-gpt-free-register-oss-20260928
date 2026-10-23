@@ -569,7 +569,8 @@ def restore_account_context(email: str) -> RemailAccount | None:
             detail = _unwrap_order(
                 _request("GET", f"/v1/open/orders/{quote(order_no, safe='')}")
             )
-        except RemailError:
+        except RemailError as _ignored_exc:
+            logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
             continue
         account = _context_from_order(detail, target)
         if account is not None:
@@ -823,7 +824,8 @@ def _parse_timestamp(raw) -> float | None:
     for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S", "%Y/%m/%d %H:%M:%S"):
         try:
             return datetime.strptime(text[:19], fmt).replace(tzinfo=timezone.utc).timestamp()
-        except ValueError:
+        except ValueError as _ignored_exc:
+            logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
             continue
     return None
 

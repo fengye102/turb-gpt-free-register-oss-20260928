@@ -139,8 +139,8 @@ def close_thread_conn() -> None:
             _ALL_CONNS[:] = [item for item in _ALL_CONNS if item is not conn]
     try:
         conn.close()
-    except sqlite3.Error:
-        pass
+    except sqlite3.Error as _ignored_exc:
+        logger.debug("关闭连接失败（进程收尾时可忽略） %s: %s", type(_ignored_exc).__name__, _ignored_exc)
 
 
 @atexit.register
@@ -150,8 +150,8 @@ def _close_all_conns() -> None:
     for conn in conns:
         try:
             conn.close()
-        except sqlite3.Error:
-            pass
+        except sqlite3.Error as _ignored_exc:
+            logger.debug("关闭连接失败（进程收尾时可忽略） %s: %s", type(_ignored_exc).__name__, _ignored_exc)
 
 
 def _active_sqlite_path() -> Path:
@@ -349,7 +349,8 @@ def _ensure_sqlite() -> None:
                 try:
                     content = json.loads(path.read_text(encoding="utf-8"))
                     stat = path.stat()
-                except Exception:
+                except Exception as _ignored_exc:
+                    logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
                     continue
                 filename = path.name
                 meta = dict(content)
@@ -370,7 +371,8 @@ def _ensure_sqlite() -> None:
                 try:
                     content = json.loads(path.read_text(encoding="utf-8"))
                     stat = path.stat()
-                except Exception:
+                except Exception as _ignored_exc:
+                    logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
                     continue
                 identity = content.get("agent_identity") if isinstance(content.get("agent_identity"), dict) else {}
                 email = str(content.get("email") or identity.get("email") or "").strip()
@@ -3452,7 +3454,8 @@ def migrate_legacy_files() -> dict:
                     extra=extra,
                 )
                 summary["accounts_imported"] += 1
-            except Exception:
+            except Exception as _ignored_exc:
+                logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
                 continue
 
     for txt in (_PROJECT_ROOT / "outlook_accounts.txt", _OUTLOOK_TXT):

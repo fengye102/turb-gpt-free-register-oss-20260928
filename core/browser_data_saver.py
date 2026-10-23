@@ -159,7 +159,8 @@ class BrowserDataSaver:
             try:
                 if fnmatchcase(text, pattern):
                     return pattern
-            except Exception:
+            except Exception as _ignored_exc:
+                logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
                 continue
         return None
 

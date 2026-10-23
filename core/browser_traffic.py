@@ -1625,7 +1625,8 @@ class SeleniumTrafficTracker(_TrafficAccumulator):
                     continue
                 self._handle_cdp_event(method, message.get("params") or {})
                 parsed += 1
-            except Exception:
+            except Exception as _ignored_exc:
+                logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
                 continue
         return parsed
 

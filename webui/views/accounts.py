@@ -727,7 +727,8 @@ def _pick_free_port(start: int = 9222, end: int = 9280) -> int:
             try:
                 s.bind(("127.0.0.1", port))
                 return port
-            except OSError:
+            except OSError as _ignored_exc:
+                logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
                 continue
     return start
 

@@ -146,7 +146,8 @@ def _extract_callback_url_from_any_window(driver) -> str:
                 found = _extract_callback_url_from_page(driver)
                 if found:
                     return found
-            except Exception:
+            except Exception as _ignored_exc:
+                logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
                 continue
     except Exception as _ignored_exc:
         logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
