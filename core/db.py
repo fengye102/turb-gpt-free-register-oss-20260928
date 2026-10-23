@@ -11,7 +11,7 @@ import sqlite3
 import threading
 import uuid
 from contextlib import closing
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -71,7 +71,20 @@ _SQLITE_READY_PATH: Path | None = None
 
 
 def _now() -> str:
-    return datetime.now().isoformat(timespec="seconds")
+    """统一写入带时区的 UTC 秒级时间戳，落库时间不再随服务器本地时区漂移。"""
+    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+
+def _elapsed_seconds(stamp: object) -> float:
+    """返回 stamp 距今的秒数，正数表示已经过去。
+
+    旧库里的时间戳是不带时区的本地时间字符串，按本地时区补全；新写入的是 +00:00 结尾的 UTC。
+    解析失败照旧抛 TypeError/ValueError，由调用方原有的 except 分支兜底，行为与改动前一致。
+    """
+    dt = datetime.fromisoformat(str(stamp or ""))
+    if dt.tzinfo is None:
+        dt = dt.astimezone()
+    return (datetime.now(timezone.utc) - dt.astimezone(timezone.utc)).total_seconds()
 
 
 def _ensure_storage() -> None:
@@ -762,8 +775,8 @@ def _decorate_account(row: dict) -> dict:
         try:
             stamp_key = "plan_check_queued_at" if plan_status == "queued" else "plan_check_started_at"
             stale_after = _PLAN_CHECK_QUEUE_STALE_SECONDS if plan_status == "queued" else _PLAN_CHECK_STALE_SECONDS
-            started_at = datetime.fromisoformat(str(out.get(stamp_key) or ""))
-            if (datetime.now() - started_at).total_seconds() >= stale_after:
+            elapsed = _elapsed_seconds(out.get(stamp_key))
+            if elapsed >= stale_after:
                 out["plan_check_status"] = "failed"
                 out["plan_check_error"] = "上次套餐查询状态已超时，可重新查询"
                 out["plan_check_stale"] = True
@@ -1073,8 +1086,8 @@ def claim_account_codex_agent(acc_id: int, trigger: str = "manual") -> bool:
             try:
                 stamp_key = "codex_agent_queued_at" if current_status == "queued" else "codex_agent_started_at"
                 stale_after = _PLAN_CHECK_QUEUE_STALE_SECONDS if current_status == "queued" else _PLAN_CHECK_STALE_SECONDS
-                started_at = datetime.fromisoformat(str(row.get(stamp_key) or ""))
-                if (datetime.now() - started_at).total_seconds() < stale_after:
+                elapsed = _elapsed_seconds(row.get(stamp_key))
+                if elapsed < stale_after:
                     return False
             except (TypeError, ValueError) as _ignored_exc:
                 logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
@@ -1217,8 +1230,8 @@ def claim_account_plan_check(
             try:
                 stamp_key = "plan_check_queued_at" if current_status == "queued" else "plan_check_started_at"
                 stale_after = _PLAN_CHECK_QUEUE_STALE_SECONDS if current_status == "queued" else _PLAN_CHECK_STALE_SECONDS
-                started_at = datetime.fromisoformat(str(row.get(stamp_key) or ""))
-                if (datetime.now() - started_at).total_seconds() < stale_after:
+                elapsed = _elapsed_seconds(row.get(stamp_key))
+                if elapsed < stale_after:
                     return False
             except (TypeError, ValueError) as _ignored_exc:
                 logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
@@ -1451,8 +1464,8 @@ def claim_account_extract(acc_id: int, trigger: str = "manual", link_type: str =
             try:
                 stamp_key = "extract_link_queued_at" if current_status == "queued" else "extract_link_started_at"
                 stale_after = _EXTRACT_QUEUE_STALE_SECONDS if current_status == "queued" else _EXTRACT_STALE_SECONDS
-                started_at = datetime.fromisoformat(str(row.get(stamp_key) or ""))
-                if (datetime.now() - started_at).total_seconds() < stale_after:
+                elapsed = _elapsed_seconds(row.get(stamp_key))
+                if elapsed < stale_after:
                     return False
             except (TypeError, ValueError) as _ignored_exc:
                 logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
@@ -2013,8 +2026,8 @@ def claim_account_totp_setup(acc_id: int, trigger: str = "manual") -> bool:
             try:
                 stamp_key = "totp_setup_queued_at" if current_status == "queued" else "totp_setup_started_at"
                 stale_after = _PLAN_CHECK_QUEUE_STALE_SECONDS if current_status == "queued" else _PLAN_CHECK_STALE_SECONDS
-                started_at = datetime.fromisoformat(str(row.get(stamp_key) or ""))
-                if (datetime.now() - started_at).total_seconds() < stale_after:
+                elapsed = _elapsed_seconds(row.get(stamp_key))
+                if elapsed < stale_after:
                     return False
             except (TypeError, ValueError) as _ignored_exc:
                 logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
@@ -2135,8 +2148,8 @@ def claim_account_live_check(acc_id: int, trigger: str = "manual") -> bool:
             try:
                 stamp_key = "live_check_queued_at" if row.get("live_check_status") == "queued" else "live_check_started_at"
                 stale_after = _PLAN_CHECK_QUEUE_STALE_SECONDS if row.get("live_check_status") == "queued" else _PLAN_CHECK_STALE_SECONDS
-                started_at = datetime.fromisoformat(str(row.get(stamp_key) or ""))
-                if (datetime.now() - started_at).total_seconds() < stale_after:
+                elapsed = _elapsed_seconds(row.get(stamp_key))
+                if elapsed < stale_after:
                     return False
             except (TypeError, ValueError) as _ignored_exc:
                 logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
