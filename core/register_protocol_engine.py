@@ -3,15 +3,15 @@
 
 设计
 ----
-turb 原来那套协议注册（\`main.py\` 里一长串步骤 + \`core/openai_auth.py\` 的
+turb 原来那套协议注册（`main.py` 里一长串步骤 + `core/openai_auth.py` 的
 network_preflight / follow_authorize / create_account ...）**已停用**，改成把活交给
-协议机自己的 \`AuthFlow.run_register()\`。
+协议机自己的 `AuthFlow.run_register()`。
 
 为什么走子进程而不是直接 import
 ------------------------------
-turb 根目录有 \`config\` 包，协议机也有 \`config.py\`；同进程 import 必撞名。
+turb 根目录有 `config` 包，协议机也有 `config.py`；同进程 import 必撞名。
 让协议机在自己的目录里跑（cwd + sys.path[0] 都是它），两边互不污染，
-也不用给任何模块改名。桥接脚本：\`vendor/gpt-register-tool/协议/_turb_bridge.py\`。
+也不用给任何模块改名。桥接脚本：`vendor/gpt-register-tool/协议/_turb_bridge.py`。
 
 对外接口
 --------
@@ -25,8 +25,8 @@ turb 根目录有 \`config\` 包，协议机也有 \`config.py\`；同进程 imp
 
 引擎开关
 --------
-\`REGISTRATION_ENGINE\`：protocol（默认）/ legacy（turb 老流程）。
-显式写在代码里，不动 \`.env\`。
+`REGISTRATION_ENGINE`：protocol（默认）/ legacy（turb 老流程）。
+显式写在代码里，不动 `.env`。
 """
 from __future__ import annotations
 
@@ -89,7 +89,7 @@ def _run_bridge(job: dict, timeout: int) -> dict:
             text=True,
             encoding="utf-8",
             capture_output=True,
-            # cwd 必须是协议机自己的目录 —— 这样它的 \`import config\` 拿到的是它自己那份
+            # cwd 必须是协议机自己的目录 —— 这样它的 `import config` 拿到的是它自己那份
             cwd=str(_PROTO_DIR),
             timeout=timeout,
             env=env,
@@ -140,8 +140,8 @@ def register(email: str, relay_url: str, proxy: Optional[str] = None,
     """跑完整注册。返回 {"ok", "partial", "result", "have"} 或 {"ok": False, "error"}。
 
     ⚠️ want_2fa 默认 True：协议机的 2FA 绑定是**选做**的
-    （registrar 里 \`if options.get("want_2fa")\`），不显式打开就拿不到 totp_secret。
-    返回的 \`have\` 会告诉你三样关键产物各自拿到了没有：
+    （registrar 里 `if options.get("want_2fa")`），不显式打开就拿不到 totp_secret。
+    返回的 `have` 会告诉你三样关键产物各自拿到了没有：
     access_token / totp_secret / cookie_header。
     """
     job = {
