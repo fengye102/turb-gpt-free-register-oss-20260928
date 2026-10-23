@@ -106,6 +106,37 @@ def _is_unlimited_api() -> bool:
     return base.endswith(":50001")
 
 
+# 已经探测出「哪条路径能拿到工作区列表」之后就记住它。
+# 原来每轮都从第一个候选重新踩一遍 24 条路径，成功后也不复用；
+# Roxy 不同版本路径确实不同，但同一个服务的可用路径不会变。
+_WORKSPACE_PATH_CACHE: dict[str, tuple[str, str]] = {}
+# 工作区探测总预算（秒）。原来是 24 条候选 x（最多 3 次重试 + 2s/4s 退避），
+# Roxy 没起来时按钮点下去要等两分多钟，而且失败原因看不出是「服务没起」。
+WORKSPACE_PROBE_BUDGET_SECONDS = 20.0
+# 探测用的单次请求超时。业务请求用 ROXY_SELENIUM_TIMEOUT（默认 90s），探路径太长了。
+WORKSPACE_PROBE_TIMEOUT_SECONDS = 6.0
+
+
+def _is_service_down_error(exc: object) -> bool:
+    """连接层失败（服务没起、端口不通、域名解析不了）。
+
+    这类错误和「路径不对」不是一回事：剩下二十多条候选指向同一个服务，
+    继续逐条试只会白等，应当立刻告诉用户 Roxy 没起来。
+    """
+    text = str(exc or "").lower()
+    return (
+        "connection refused" in text
+        or "econnrefused" in text
+        or "failed to establish" in text
+        or "newconnectionerror" in text
+        or "max retries exceeded" in text
+        or "no route to host" in text
+        or "errno 111" in text
+        or "10061" in text
+        or "name or service not known" in text
+    )
+
+
 def _unlimited_locale_fields(proxy_url: str | None) -> dict:
     """给无限窗口 API 算 create 要用的 locale / timeZone。
 
@@ -382,12 +413,16 @@ class RoxyBrowserClient:
             or "http 429" in text
         )
 
-    def request(self, method: str, path: str, *, params: dict | None = None, json_body: dict | None = None) -> dict:
+    def request(self, method: str, path: str, *, params: dict | None = None, json_body: dict | None = None,
+                timeout: float | None = None, attempts: int | None = None) -> dict:
         url = _join_url(self.api_base, path)
         method_u = method.upper()
         # create 超时后服务端可能已创建环境，直接重试可能产生孤儿环境；默认不重试 create。
         is_create = str(path or "").rstrip("/").endswith("/create") or "browser/create" in str(path or "")
-        max_attempts = 1 if is_create else max(1, int(getattr(_cfg, "ROXY_API_RETRIES", 3) or 3))
+        retry_budget = 1 if is_create else max(1, int(getattr(_cfg, "ROXY_API_RETRIES", 3) or 3))
+        # 探测不同版本的接口路径时用 attempts=1：路径探测本来就靠「多试几条」，
+        # 每条再叠 3 次重试 + 2s/4s 退避，只会把「Roxy 没起来」这件事拖成几分钟。
+        max_attempts = max(1, int(attempts or retry_budget))
         base_delay = max(0.5, float(getattr(_cfg, "ROXY_API_RETRY_DELAY", 2) or 2))
         last_exc: Exception | None = None
         for attempt in range(1, max_attempts + 1):
@@ -401,7 +436,7 @@ class RoxyBrowserClient:
                     url,
                     params=params or None,
                     json=json_body if json_body is not None else None,
-                    timeout=max(5, int(getattr(_cfg, "ROXY_SELENIUM_TIMEOUT", 90) or 90)),
+                    timeout=max(5, int(timeout or getattr(_cfg, "ROXY_SELENIUM_TIMEOUT", 90) or 90)),
                 )
                 text = resp.text or ""
                 try:
@@ -433,10 +468,12 @@ class RoxyBrowserClient:
                 waits.sleep(delay)
         raise last_exc or RuntimeError(f"Roxy API 请求失败 {method_u} {path}")
 
-    def try_request(self, method: str, path: str, *, params: dict | None = None, json_body: dict | None = None) -> tuple[bool, dict | str]:
+    def try_request(self, method: str, path: str, *, params: dict | None = None, json_body: dict | None = None,
+                    timeout: float | None = None, attempts: int | None = None) -> tuple[bool, dict | str]:
         """宽松请求：用于探测不同 Roxy 版本接口，失败不抛出。"""
         try:
-            return True, self.request(method, path, params=params, json_body=json_body)
+            return True, self.request(method, path, params=params, json_body=json_body,
+                                     timeout=timeout, attempts=attempts)
         except Exception as exc:
             return False, f"{type(exc).__name__}: {exc}"
 
@@ -529,7 +566,7 @@ class RoxyBrowserClient:
             dedup[key] = item
         return list(dedup.values())
 
-    def list_workspaces(self) -> dict:
+    def list_workspaces(self, *, budget_seconds: float | None = None) -> dict:
         """
         获取 Roxy 团队/工作区列表。
         Roxy 不同版本路径可能有差异，因此先试配置路径，再试常见路径。
@@ -576,19 +613,41 @@ class RoxyBrowserClient:
             ("POST", "/browser/team/list"),
         ])
 
+        cache_key = str(self.api_base or "")
+        cached = _WORKSPACE_PATH_CACHE.get(cache_key)
+        ordered = list(candidates)
+        if cached and cached in ordered:
+            ordered.remove(cached)
+            ordered.insert(0, cached)
+
+        budget = float(budget_seconds or WORKSPACE_PROBE_BUDGET_SECONDS)
+        deadline = time.monotonic() + max(1.0, budget)
         errors = []
         seen = set()
-        for m, path in candidates:
+        for m, path in ordered:
             key = (m, path)
             if key in seen:
                 continue
             seen.add(key)
-            ok, payload = self.try_request(m, path)
+            left = deadline - time.monotonic()
+            if left <= 0:
+                errors.append({"method": m, "path": path,
+                               "error": f"工作区探测预算 {budget:.0f}s 已用完，跳过剩余候选"})
+                return {"ok": False, "items": [], "errors": errors, "timed_out": True}
+            ok, payload = self.try_request(
+                m, path, timeout=min(WORKSPACE_PROBE_TIMEOUT_SECONDS, max(1.0, left)), attempts=1
+            )
             if not ok:
                 errors.append({"method": m, "path": path, "error": payload})
+                if _is_service_down_error(payload):
+                    # 连接层就失败了：剩下二十多条候选指向同一个服务，继续试只是白等
+                    errors.append({"method": "-", "path": "-",
+                                   "error": "RoxyBrowser 服务未响应（端口不通/未启动），已跳过其余候选路径"})
+                    return {"ok": False, "items": [], "errors": errors, "service_down": True}
                 continue
             items = self._extract_workspace_items(payload if isinstance(payload, dict) else {})
             if items:
+                _WORKSPACE_PATH_CACHE[cache_key] = (m, path)
                 return {"ok": True, "path": path, "method": m, "items": items, "raw": payload}
             errors.append({"method": m, "path": path, "error": "响应中未解析到团队/工作区列表", "payload": payload})
 
