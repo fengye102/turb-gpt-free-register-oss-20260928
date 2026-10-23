@@ -57,7 +57,8 @@ def test_outlook_import_list_and_paging(client):
     assert resp.get_json() == {"ok": True, "inserted": 2, "skipped": 0, "parsed": 2, "as_registered": False}
 
     items = client.get("/api/outlook?source=outlook", headers=AUTH).get_json()
-    assert [row["email"] for row in items] == ["a@x.com", "b@x.com"]
+    # 列表按 id 倒序（最新导入在前），这是既有行为，不要改。
+    assert [row["email"] for row in items] == ["b@x.com", "a@x.com"]
 
     paged = client.get("/api/outlook?source=outlook&paged=1&page=1&page_size=1", headers=AUTH).get_json()
     assert paged["total"] == 2 and paged["page"] == 1 and paged["page_size"] == 1

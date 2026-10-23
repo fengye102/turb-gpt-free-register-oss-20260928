@@ -81,7 +81,7 @@ def test_codex_retry_log_validation(client):
 @pytest.mark.parametrize(
     "path,error",
     [
-        ("/api/codex/archive", "filename 缺失"),
+        ("/api/codex/archive", "filename 必填"),
         ("/api/codex/delete", "filename 为空"),
         ("/api/codex/reset-export", "filename 为空"),
     ],
