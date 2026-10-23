@@ -775,9 +775,6 @@ def _load_jobs() -> list[dict]:
     return _load_collection("jobs")
 
 
-def _save_jobs(rows: list[dict]) -> None:
-    _save_collection("jobs", rows)
-
 
 def _find_by_email(rows: list[dict], email: str) -> dict | None:
     target = (email or "").lower()
@@ -3148,8 +3145,54 @@ def codex_accounts_summary() -> dict:
 # registration_jobs
 # ============================================================
 
+def _next_job_id() -> int:
+    """下一个任务 id：让 SQLite 自己算，不必先把整张表读进内存。"""
+    _ensure_sqlite()
+    with _conn_scope() as conn:
+        return int(conn.execute("SELECT COALESCE(MAX(id), 0) + 1 FROM registration_jobs").fetchone()[0])
+
+
+def _insert_job_row(row: dict) -> None:
+    """单行插入；不再「整表删了重插」，否则并发写会把别的任务行冲掉。"""
+    _ensure_sqlite()
+    with _conn_scope() as conn, conn:
+        conn.execute(
+            "INSERT INTO registration_jobs(id,email,status,archived,created_at,updated_at,payload) "
+            "VALUES(?,?,?,?,?,?,?)",
+            (int(row.get("id") or 0), str(row.get("email") or ""), str(row.get("status") or ""),
+             int(bool(row.get("archived"))), str(row.get("created_at") or _now()),
+             str(row.get("updated_at") or _now()), json.dumps(row, ensure_ascii=False)),
+        )
+
+
+def _read_job_row(job_id: int) -> dict | None:
+    """按 id 读一行任务；原来 get_job 会把整张表加载一遍再挑。"""
+    _ensure_sqlite()
+    with _conn_scope() as conn:
+        row = conn.execute("SELECT payload FROM registration_jobs WHERE id=?", (int(job_id),)).fetchone()
+    return json.loads(row["payload"]) if row else None
+
+
+def _save_job_row(row: dict) -> None:
+    """只更新 registration_jobs 的一行（按 id）。
+
+    理由与 _save_account_row 一样：update_job 原来走 _load_jobs() + _save_jobs()，
+    也就是「整表读 -> 整表删 -> 整表插」。一个任务跑一轮状态要变好几次，
+    每次都重写整张 jobs 表；两个进程各改各的任务时，后写的会把先写的整表覆盖掉。
+    """
+    _ensure_sqlite()
+    rid = int(row.get("id") or 0)
+    if rid <= 0:
+        raise ValueError("任务行缺少 id，无法单行更新")
+    with _conn_scope() as conn, conn:
+        conn.execute(
+            "UPDATE registration_jobs SET payload=?, email=?, status=?, archived=?, updated_at=? WHERE id=?",
+            (json.dumps(row, ensure_ascii=False), str(row.get("email") or ""), str(row.get("status") or ""),
+             int(bool(row.get("archived"))), str(row.get("updated_at") or _now()), rid),
+        )
+
+
 def _new_job_row(
-    rows: list[dict],
     *,
     email_source: str,
     job_type: str = "registration",
@@ -3164,7 +3207,7 @@ def _new_job_row(
     log_file = str(_LOG_DIR / f"{job_uuid}.log")
     Path(log_file).parent.mkdir(parents=True, exist_ok=True)
     return {
-        "id": _next_id(rows),
+        "id": _next_job_id(),
         "job_uuid": job_uuid,
         "job_type": job_type,
         "parent_job_id": parent_job_id,
@@ -3187,10 +3230,8 @@ def _new_job_row(
 def create_job(email_source: str, email: str | None = None) -> dict:
     """创建一个首次执行的 pending 注册任务。"""
     with _LOCK:
-        rows = _load_jobs()
-        row = _new_job_row(rows, email_source=email_source, email=email)
-        rows.append(row)
-        _save_jobs(rows)
+        row = _new_job_row(email_source=email_source, email=email)
+        _insert_job_row(row)
         return dict(row)
 
 
@@ -3230,7 +3271,6 @@ def create_retry_job(
             if int(r.get("id") or 0) == root_id or int(r.get("root_job_id") or 0) == root_id
         ]
         row = _new_job_row(
-            rows,
             email_source=email_source,
             job_type=job_type,
             parent_job_id=int(source_job_id),
@@ -3240,8 +3280,7 @@ def create_retry_job(
             email=email,
             account_id=account_id,
         )
-        rows.append(row)
-        _save_jobs(rows)
+        _insert_job_row(row)
         return dict(row), True
 
 
@@ -3257,8 +3296,7 @@ def update_job(
     network_traffic: dict | None = None,
 ) -> None:
     with _LOCK:
-        rows = _load_jobs()
-        row = next((r for r in rows if int(r.get("id") or 0) == int(job_id)), None)
+        row = _read_job_row(job_id)
         if row is None:
             return
         if status is not None:
@@ -3275,7 +3313,8 @@ def update_job(
             row["account_id"] = account_id
         if network_traffic is not None:
             row["network_traffic"] = dict(network_traffic)
-        _save_jobs(rows)
+        row["updated_at"] = _now()
+        _save_job_row(row)
 
 
 def list_jobs(limit: int = 100) -> list[dict]:
@@ -3313,8 +3352,8 @@ def job_status_counts() -> dict:
 
 
 def get_job(job_id: int) -> dict | None:
-    row = next((r for r in _load_jobs() if int(r.get("id") or 0) == int(job_id)), None)
-    return dict(row) if row else None
+    """按 id 单行读取（原来会把整张 jobs 表加载一遍）。"""
+    return _read_job_row(job_id)
 
 
 def get_successful_retry_for_job(job_id: int) -> dict | None:
@@ -3341,14 +3380,14 @@ def delete_job(job_id: int, *, delete_log: bool = True, allow_running: bool = Fa
     默认不删除 running 任务，避免后台线程仍在执行但前端记录消失。
     """
     with _LOCK:
-        rows = _load_jobs()
-        idx = next((i for i, r in enumerate(rows) if int(r.get("id") or 0) == int(job_id)), None)
-        if idx is None:
+        row = _read_job_row(job_id)
+        if row is None:
             return False
-        if not allow_running and rows[idx].get("status") in ("running", "stopping"):
+        if not allow_running and row.get("status") in ("running", "stopping"):
             return False
-        row = rows.pop(idx)
-        _save_jobs(rows)
+        _ensure_sqlite()
+        with _conn_scope() as conn, conn:
+            conn.execute("DELETE FROM registration_jobs WHERE id=?", (int(job_id),))
 
     if delete_log:
         log_file = row.get("log_file")
