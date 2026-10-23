@@ -107,8 +107,8 @@ def _extract_callback_url_from_page(page) -> str:
         current = str(page.url or "")
         if _is_callback_url(current):
             return current
-    except Exception:
-        pass
+    except Exception as _ignored_exc:
+        logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
     try:
         urls = page.evaluate(
             """() => {
@@ -137,8 +137,8 @@ def _extract_callback_url_from_context(context, page=None) -> str:
         pages.append(page)
     try:
         pages.extend([p for p in context.pages if p not in pages])
-    except Exception:
-        pass
+    except Exception as _ignored_exc:
+        logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
     for p in pages:
         try:
             found = _extract_callback_url_from_page(p)
@@ -161,8 +161,8 @@ def _wait_for_callback(context, page, timeout: int | None = None) -> str:
             callback = _extract_callback_url_from_context(context, page)
             if callback:
                 return callback
-        except Exception:
-            pass
+        except Exception as _ignored_exc:
+            logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
         time.sleep(0.25 if _fast_mode() else 0.5)
     raise RuntimeError(f"等待 Codex callback 超时，最后 URL={last_url}")
 
@@ -190,8 +190,8 @@ def _all_frames(page):
     frames = [page]
     try:
         frames.extend([f for f in page.frames if f not in frames])
-    except Exception:
-        pass
+    except Exception as _ignored_exc:
+        logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
     return frames
 
 
@@ -207,16 +207,16 @@ def _wait_auth_page_ready(page, timeout: int = 8) -> None:
                 try:
                     if frame.locator("input, button, textarea, [role='button']").count() > 0:
                         return
-                except Exception:
-                    pass
+                except Exception as _ignored_exc:
+                    logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
                 try:
                     text = (frame.locator("body").inner_text(timeout=500) or "").strip()
                     if text:
                         return
-                except Exception:
-                    pass
-        except Exception:
-            pass
+                except Exception as _ignored_exc:
+                    logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
+        except Exception as _ignored_exc:
+            logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
         time.sleep(0.25 if _fast_mode() else 0.6)
     logger.warning("[Codex][BrowserUse] 登录页等待渲染超时，最后 URL=%s", last_url or "-")
 
@@ -248,8 +248,8 @@ def _click_first_any_frame(page, selectors: list[str], timeout_ms: int = 5000) -
                 try:
                     loc.evaluate("el => el.click()")
                     return True
-                except Exception:
-                    pass
+                except Exception as _ignored_exc:
+                    logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
         time.sleep(0.25)
     return False
 
@@ -332,8 +332,8 @@ def _body_snippet(page, limit: int = 600) -> str:
             text = " ".join(text.split())
             if text:
                 chunks.append(text)
-        except Exception:
-            pass
+        except Exception as _ignored_exc:
+            logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
     return " | ".join(chunks)[:limit]
 
 
@@ -588,11 +588,11 @@ def _install_account_dead_response_tracker(page) -> dict:
                     tracker["code"] = code
                     tracker["text"] = text[:500]
                     logger.warning("[Codex][BrowserUse] email-otp/validate 响应识别账号已废：%s", code)
-            except Exception:
-                pass
+            except Exception as _ignored_exc:
+                logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
         page.on("response", _on_response)
-    except Exception:
-        pass
+    except Exception as _ignored_exc:
+        logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
     return tracker
 
 
@@ -611,8 +611,8 @@ def _wait_after_email_submit(page, timeout: int = 45, dead_tracker: dict | None 
         body = ""
         try:
             body = (page.locator("body").inner_text(timeout=1000) or "").lower()
-        except Exception:
-            pass
+        except Exception as _ignored_exc:
+            logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
         if any(x in body for x in ("incorrect", "invalid", "expired", "错误", "过期", "无效")):
             return "invalid"
         time.sleep(0.5)
@@ -714,8 +714,8 @@ def _fill_mfa_challenge_if_present(page, email: str, timeout: int = 15) -> bool:
             ):
                 try:
                     page.keyboard.press("Enter")
-                except Exception:
-                    pass
+                except Exception as _ignored_exc:
+                    logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
             logger.info("[Codex][BrowserUse] 已填写并提交 MFA 验证码：%s", email)
             wait_end = time.time() + 12
             while time.time() < wait_end:
@@ -779,8 +779,8 @@ def _fill_login_password_if_present(page, email: str, timeout: int = 18) -> str 
         ):
             try:
                 page.keyboard.press("Enter")
-            except Exception:
-                pass
+            except Exception as _ignored_exc:
+                logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
         logger.info("[Codex][BrowserUse] 已填写并提交登录密码：%s", email)
         wait_end = time.time() + 12
         while time.time() < wait_end:
@@ -808,8 +808,8 @@ def _fill_email_and_otp(page, email: str, otp_provider, auth_url: str, dead_trac
     page.goto(auth_url, wait_until="domcontentloaded", timeout=_timeout_ms(getattr(_cfg, "BROWSER_USE_NAVIGATION_TIMEOUT", 90)))
     try:
         page.wait_for_load_state("load", timeout=5000)
-    except Exception:
-        pass
+    except Exception as _ignored_exc:
+        logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
     _wait_auth_page_ready(page, timeout=2)
     _t_goto.done(f"url={_page_url(page) or '-'}")
     _bu_delay("navigate")
@@ -940,8 +940,8 @@ def _select_sms_channel(page) -> None:
               if (sms) { sms.click(); sms.dispatchEvent(new Event('input', {bubbles:true})); sms.dispatchEvent(new Event('change', {bubbles:true})); }
             }"""
         )
-    except Exception:
-        pass
+    except Exception as _ignored_exc:
+        logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
 
 
 def _has_phone_prompt(page) -> bool:
@@ -1113,16 +1113,16 @@ def _dismiss_phone_country_dropdown(page) -> None:
         time.sleep(0.15)
         page.keyboard.press("Tab")
         time.sleep(0.15)
-    except Exception:
-        pass
+    except Exception as _ignored_exc:
+        logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
     try:
         page.evaluate("""() => {
           const active = document.activeElement;
           if (active && active.blur) active.blur();
           document.body.click();
         }""")
-    except Exception:
-        pass
+    except Exception as _ignored_exc:
+        logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
 
 
 def _click_phone_continue(page) -> bool:
@@ -1196,8 +1196,8 @@ def _clear_phone_inputs(page) -> None:
     for frame in _all_frames(page):
         try:
             frame.evaluate(script)
-        except Exception:
-            pass
+        except Exception as _ignored_exc:
+            logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
 
 def _fill_phone(page, phone: str) -> str:
     phone_e164 = _phone_e164(phone)
@@ -1240,8 +1240,8 @@ def _fill_phone(page, phone: str) -> str:
     if not _click_phone_continue(page):
         try:
             page.keyboard.press("Enter")
-        except Exception:
-            pass
+        except Exception as _ignored_exc:
+            logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
     return phone_e164
 
 
@@ -1316,15 +1316,15 @@ def _ensure_add_phone_form(page, *, reason: str = "") -> bool:
         if _try_click_change_phone(page):
             if _wait_phone_form_ready(page, timeout=8):
                 return True
-    except Exception:
-        pass
+    except Exception as _ignored_exc:
+        logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
 
     try:
         page.go_back(wait_until="domcontentloaded", timeout=_timeout_ms(getattr(_cfg, "BROWSER_USE_NAVIGATION_TIMEOUT", 90)))
         if _wait_phone_form_ready(page, timeout=8):
             return True
-    except Exception:
-        pass
+    except Exception as _ignored_exc:
+        logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
 
     # 直接打开 add-phone。有时 body 会短暂为空，所以 reload + wait。
     for i in range(2):
@@ -1332,14 +1332,14 @@ def _ensure_add_phone_form(page, *, reason: str = "") -> bool:
             page.goto("https://auth.openai.com/add-phone", wait_until="domcontentloaded", timeout=_timeout_ms(getattr(_cfg, "BROWSER_USE_NAVIGATION_TIMEOUT", 90)))
             try:
                 page.wait_for_load_state("load", timeout=5000)
-            except Exception:
-                pass
+            except Exception as _ignored_exc:
+                logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
             if _wait_phone_form_ready(page, timeout=10):
                 return True
             try:
                 page.reload(wait_until="domcontentloaded", timeout=_timeout_ms(getattr(_cfg, "BROWSER_USE_NAVIGATION_TIMEOUT", 90)))
-            except Exception:
-                pass
+            except Exception as _ignored_exc:
+                logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
             if _wait_phone_form_ready(page, timeout=8):
                 return True
         except Exception as exc:
@@ -1411,16 +1411,16 @@ def _do_phone_verification_if_present(page) -> None:
             if activation_id:
                 try:
                     sms_provider.cancel(activation_id, http)
-                except Exception:
-                    pass
+                except Exception as _ignored_exc:
+                    logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
             if attempt >= max_retries:
                 break
             try:
                 _dismiss_phone_country_dropdown(page)
                 _clear_phone_inputs(page)
                 _ensure_add_phone_form(page, reason=f"after-fail-{attempt}")
-            except Exception:
-                pass
+            except Exception as _ignored_exc:
+                logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
             time.sleep(min(1 + attempt, 4))
     raise RuntimeError(f"手机验证失败，已重试 {max_retries} 次：{last_error}")
 
@@ -1603,13 +1603,13 @@ def _run_browser_use_codex_oauth_once(email: str, otp_provider=None, proxy: str 
             try:
                 if browser is not None:
                     browser.close()
-            except Exception:
-                pass
+            except Exception as _ignored_exc:
+                logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
             if provider in ("skyvern", "sv") and hasattr(client, "close_browser_session") and getattr(session_info, "session_id", ""):
                 try:
                     client.close_browser_session(session_info.session_id)
-                except Exception:
-                    pass
+                except Exception as _ignored_exc:
+                    logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
         _set_log_provider_label("BrowserUse")
 
 

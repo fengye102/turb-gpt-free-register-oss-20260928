@@ -695,8 +695,8 @@ class _TrafficAccumulator:
             if self._data_saver is not None:
                 try:
                     result.update(self._data_saver.snapshot())
-                except Exception:
-                    pass
+                except Exception as _ignored_exc:
+                    logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
             return result
 
     def _finish_snapshot(self) -> dict[str, Any]:
@@ -830,8 +830,8 @@ class PlaywrightTrafficTracker(_TrafficAccumulator):
                 _value_size(name) + _value_size(value) + 4
                 for name, value in headers.items()
             ) + 2
-        except Exception:
-            pass
+        except Exception as _ignored_exc:
+            logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
         try:
             body = request.post_data
         except Exception:
@@ -876,21 +876,21 @@ class PlaywrightTrafficTracker(_TrafficAccumulator):
         if response is not None:
             try:
                 status = getattr(response, "status", None)
-            except Exception:
-                pass
+            except Exception as _ignored_exc:
+                logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
             try:
                 headers = getattr(response, "headers", {}) or {}
                 if isinstance(headers, dict):
                     mime_type = headers.get("content-type") or ""
-            except Exception:
-                pass
+            except Exception as _ignored_exc:
+                logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
             try:
                 # Playwright 能明确暴露的是 Service Worker 响应；普通 HTTP
                 # 缓存命中没有稳定的 Request API，不能把未知误报成 miss。
                 if bool(getattr(response, "from_service_worker", False)):
                     cache_status = "service_worker"
-            except Exception:
-                pass
+            except Exception as _ignored_exc:
+                logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
         return {
             "resource_type": _normalize_resource_type(resource_type),
             "method": str(method or "GET").upper(),
@@ -1166,12 +1166,12 @@ class PlaywrightTrafficTracker(_TrafficAccumulator):
                 for command in ("Profiler.stopPreciseCoverage", "Profiler.disable"):
                     try:
                         session.send(command, {})
-                    except Exception:
-                        pass
+                    except Exception as _ignored_exc:
+                        logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
                 try:
                     session.detach()
-                except Exception:
-                    pass
+                except Exception as _ignored_exc:
+                    logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
         with self._lock:
             self._js_coverage_sessions.clear()
 
@@ -1179,8 +1179,8 @@ class PlaywrightTrafficTracker(_TrafficAccumulator):
         for emitter, event, callback in self._listeners:
             try:
                 emitter.remove_listener(event, callback)
-            except Exception:
-                pass
+            except Exception as _ignored_exc:
+                logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
         self._listeners.clear()
 
     def stop(self) -> dict[str, Any]:
@@ -1262,8 +1262,8 @@ class SeleniumTrafficTracker(_TrafficAccumulator):
             for command in ("Profiler.stopPreciseCoverage", "Profiler.disable"):
                 try:
                     self.driver.execute_cdp_cmd(command, {})
-                except Exception:
-                    pass
+                except Exception as _ignored_exc:
+                    logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
 
     @staticmethod
     def _header_size(headers: Any, *, start_line: str = "", headers_text: Any = None) -> int:
@@ -1485,8 +1485,8 @@ class SeleniumTrafficTracker(_TrafficAccumulator):
                     if record is not None and record.get("resource_type"):
                         request["resourceType"] = record.get("resource_type")
                     blocked_by_data_saver = bool(self._data_saver.observe_cdp_event(method, params, request))
-                except Exception:
-                    pass
+                except Exception as _ignored_exc:
+                    logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
             if record is not None:
                 if blocked_by_data_saver:
                     record["finished"] = True

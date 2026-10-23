@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 import threading
@@ -11,6 +12,8 @@ from typing import Any, Optional
 from config.openai_protocol import OAI_CLIENT_BUILD_NUMBER, OPENAI_BUILD_ID
 
 from .http import chatgpt_session, request
+
+logger = logging.getLogger(__name__)
 
 OPENAI_CHECKOUT_URL = "https://chatgpt.com/backend-api/payments/checkout"
 # 2026-09-11 收口：原先这里自己一套更旧的硬编码
@@ -240,8 +243,8 @@ def warmup_chatgpt_page(
             },
             timeout=timeout,
         )
-    except Exception:
-        pass
+    except Exception as _ignored_exc:
+        logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
 
 
 def fetch_checkout_state(

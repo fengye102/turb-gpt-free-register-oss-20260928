@@ -401,8 +401,8 @@ def request_sentinel_token(session: BrowserSession, flow: str) -> dict:
             pow_req,
             str((data.get("proofofwork") or {}).get("difficulty") or "-"),
         )
-    except Exception:
-        pass
+    except Exception as _ignored_exc:
+        logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
 
     return data
 
@@ -495,8 +495,8 @@ def build_sentinel_header(session: BrowserSession, sentinel_resp: dict, flow: st
                             len(inner), outer_len,
                         )
                         so_value = None
-                except (ValueError, TypeError):
-                    pass
+                except (ValueError, TypeError) as _ignored_exc:
+                    logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
         elif isinstance(so_value, dict):
             inner = so_value.get("so")
             if isinstance(inner, str) and len(inner) >= 400:

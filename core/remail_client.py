@@ -817,8 +817,8 @@ def _parse_timestamp(raw) -> float | None:
         if parsed.tzinfo is None:
             parsed = parsed.replace(tzinfo=timezone.utc)
         return parsed.timestamp()
-    except ValueError:
-        pass
+    except ValueError as _ignored_exc:
+        logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
     for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S", "%Y/%m/%d %H:%M:%S"):
         try:
             return datetime.strptime(text[:19], fmt).replace(tzinfo=timezone.utc).timestamp()

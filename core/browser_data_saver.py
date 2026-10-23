@@ -231,8 +231,8 @@ class BrowserDataSaver:
                     logger.debug("[%s] 省流量路由处理失败，尝试放行：%s", self.label, exc)
                     try:
                         route.continue_()
-                    except Exception:
-                        pass
+                    except Exception as _ignored_exc:
+                        logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
 
             context.route("**/*", _handle_route)
             self._context = context
@@ -270,8 +270,8 @@ class BrowserDataSaver:
             # 某些情况下流量统计器没有成功初始化，仍需单独开启 Network 域。
             try:
                 driver.execute_cdp_cmd("Network.enable", {})
-            except Exception:
-                pass
+            except Exception as _ignored_exc:
+                logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
             driver.execute_cdp_cmd("Network.setBlockedURLs", {"urls": patterns})
             self._driver = driver
             self._selenium_patterns = patterns
@@ -332,8 +332,8 @@ class BrowserDataSaver:
         if self._context is not None and self._route_handler is not None:
             try:
                 self._context.unroute("**/*", self._route_handler)
-            except Exception:
-                pass
+            except Exception as _ignored_exc:
+                logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
         self._route_handler = None
         self._context = None
         self._driver = None

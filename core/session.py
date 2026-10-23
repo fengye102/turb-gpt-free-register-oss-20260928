@@ -309,8 +309,8 @@ class BrowserSession:
                 name = getattr(cookie, "name", "")
                 if name in _CF_COOKIE_NAMES:
                     out[f"{getattr(cookie, 'domain', '')}:{name}"] = len(str(getattr(cookie, "value", "") or ""))
-        except Exception:
-            pass
+        except Exception as _ignored_exc:
+            logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
         return out
 
     @staticmethod
@@ -425,8 +425,8 @@ class BrowserSession:
                 if cdom and not (wanted == cdom or wanted.endswith("." + cdom) or cdom.endswith("." + wanted)):
                     continue
                 pairs.append(f"{name}={value}")
-        except Exception:
-            pass
+        except Exception as _ignored_exc:
+            logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
         return "; ".join(pairs)
 
     def auth_cookie_header(self) -> str:
@@ -892,8 +892,8 @@ class BrowserSession:
                 rq = getattr(resp, "request_size", None)
                 if isinstance(rq, int) and rq > 0:
                     upload = rq
-            except Exception:
-                pass
+            except Exception as _ignored_exc:
+                logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
             status = int(getattr(resp, "status_code", 0) or 0)
             if 200 <= status < 400:
                 stats["completed_request_count"] = int(stats.get("completed_request_count") or 0) + 1

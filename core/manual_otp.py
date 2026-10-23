@@ -147,8 +147,8 @@ def wait_for_manual_otp(email: str, *, timeout: int = 180, job_id: int | None = 
             try:
                 from core.registration_service import check_stop_requested
                 check_stop_requested()
-            except Exception:
-                pass
+            except Exception as _ignored_exc:
+                logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
         raise TimeoutError(f"等待手动验证码超时（{timeout}s）：{email}")
     finally:
         clear_waiting(email)

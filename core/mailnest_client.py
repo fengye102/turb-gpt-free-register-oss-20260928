@@ -120,12 +120,12 @@ def _timestamp(item: dict) -> float | None:
             continue
         try:
             return float(raw)
-        except (TypeError, ValueError):
-            pass
+        except (TypeError, ValueError) as _ignored_exc:
+            logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
         try:
             return datetime.fromisoformat(str(raw).replace("Z", "+00:00")).timestamp()
-        except ValueError:
-            pass
+        except ValueError as _ignored_exc:
+            logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
     return None
 
 

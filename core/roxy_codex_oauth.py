@@ -53,8 +53,8 @@ def _detect_browser_kind(opened=None) -> str:
         raw = getattr(opened, "raw", None) or {}
         if isinstance(raw, dict) and str(raw.get("driver") or "").lower().startswith("cloak"):
             return "Cloak"
-    except Exception:
-        pass
+    except Exception as _ignored_exc:
+        logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
     return "Roxy"
 
 
@@ -112,8 +112,8 @@ def _extract_callback_url_from_page(driver) -> str:
         current = str(driver.current_url or "")
         if _is_callback_url(current):
             return current
-    except Exception:
-        pass
+    except Exception as _ignored_exc:
+        logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
     try:
         urls = driver.execute_script(r"""
         const out = [];
@@ -147,8 +147,8 @@ def _extract_callback_url_from_any_window(driver) -> str:
                     return found
             except Exception:
                 continue
-    except Exception:
-        pass
+    except Exception as _ignored_exc:
+        logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
     return ""
 
 
@@ -164,8 +164,8 @@ def _wait_for_callback(driver, timeout: int | None = None) -> str:
             callback = _extract_callback_url_from_any_window(driver)
             if callback:
                 return callback
-        except Exception:
-            pass
+        except Exception as _ignored_exc:
+            logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
         time.sleep(0.5)
     raise RuntimeError(f"等待 Codex callback 超时，最后 URL={last_url}")
 
@@ -664,8 +664,8 @@ def _wait_after_email_otp_submit(driver, timeout: int = 45) -> str:
             if time.time() - last_log > 6:
                 logger.info("[Codex][Browser] 邮箱 OTP 后仍在 email-verification，继续等待页面自动跳转")
                 last_log = time.time()
-        except Exception:
-            pass
+        except Exception as _ignored_exc:
+            logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
         time.sleep(0.5)
     logger.warning("[Codex][Browser] 邮箱 OTP 后等待跳转超时，当前 url=%s，按验证码无效/过期处理", getattr(driver, "current_url", ""))
     return "invalid"
@@ -780,8 +780,8 @@ def _auth_origin(driver) -> str:
         parsed = urlparse(str(driver.current_url or ""))
         if parsed.scheme and parsed.netloc and parsed.hostname and parsed.hostname.endswith("openai.com"):
             return f"{parsed.scheme}://{parsed.netloc}"
-    except Exception:
-        pass
+    except Exception as _ignored_exc:
+        logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
     return "https://auth.openai.com"
 
 
@@ -954,8 +954,8 @@ def _blur_active_input_and_wait(driver, *, label: str = "输入完成") -> None:
         document.body?.focus?.();
         document.dispatchEvent(new Event('change', {bubbles:true}));
         """)
-    except Exception:
-        pass
+    except Exception as _ignored_exc:
+        logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
     seconds = random.uniform(1.8, 3.2)
     logger.info("[Codex][Browser] %s，已移开焦点，等待页面处理 %.1f 秒", label, seconds)
     time.sleep(seconds)
@@ -1001,8 +1001,8 @@ def _refresh_add_phone_for_retry(driver, *, reason: str = "") -> None:
         try:
             _find_any(driver, _PHONE_INPUT_SELECTORS, timeout=8)
             return
-        except Exception:
-            pass
+        except Exception as _ignored_exc:
+            logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
         # 如果刷新后仍不在输入页，强制回 add-phone。
         target = _auth_origin(driver).rstrip("/") + "/add-phone"
         logger.info("[Codex][Browser] 刷新后未找到手机号输入框，重新打开：%s", target)
@@ -1279,8 +1279,8 @@ def _do_phone_verification_if_present(driver) -> None:
                 if activation_id:
                     try:
                         sms_provider.cancel(activation_id, http)
-                    except Exception:
-                        pass
+                    except Exception as _ignored_exc:
+                        logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
                 # 余额不足 / 无可用号码：重试多少次都不会成功，立即失败止损，
                 # 避免白等 N 轮换号重试（每轮还要刷新页面 + 随机等待）。
                 if any(k in err_text for k in (
@@ -1315,8 +1315,8 @@ def _do_phone_verification_if_present(driver) -> None:
     finally:
         try:
             http.close()
-        except Exception:
-            pass
+        except Exception as _ignored_exc:
+            logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
 
 
 def _finish_consent_workspace(driver) -> str:
@@ -1356,8 +1356,8 @@ def clear_roxy_browser_auth_state(driver) -> None:
     logger.info("[Codex][Browser] 复用注册窗口：开始清理 Cookie / localStorage / sessionStorage / cache")
     try:
         driver.execute_cdp_cmd("Network.enable", {})
-    except Exception:
-        pass
+    except Exception as _ignored_exc:
+        logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
     try:
         driver.execute_cdp_cmd("Network.clearBrowserCookies", {})
         logger.info("[Codex][Browser] 已清理浏览器 Cookie")
@@ -1379,8 +1379,8 @@ def clear_roxy_browser_auth_state(driver) -> None:
             logger.debug("[Codex][Browser] 清理站点数据失败 %s: %s", origin, exc)
     try:
         driver.get("about:blank")
-    except Exception:
-        pass
+    except Exception as _ignored_exc:
+        logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
     time.sleep(1.0)
     logger.info("[Codex][Browser] 注册窗口登录态清理完成，准备开始 Codex 授权")
 
@@ -1526,14 +1526,14 @@ def _run_roxy_codex_oauth_once(
         if owns_driver and driver and not bool(_roxy_cfg.ROXY_KEEP_BROWSER_OPEN):
             try:
                 driver.quit()
-            except Exception:
-                pass
+            except Exception as _ignored_exc:
+                logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
         if owns_driver and client and not bool(_roxy_cfg.ROXY_KEEP_BROWSER_OPEN):
             client.cleanup_profile(opened)
         try:
             _CODEX_BROWSER_KIND.reset(browser_kind_token)
-        except Exception:
-            pass
+        except Exception as _ignored_exc:
+            logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
 
 
 def run_roxy_codex_oauth(

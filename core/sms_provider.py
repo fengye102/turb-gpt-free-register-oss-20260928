@@ -440,8 +440,8 @@ def wait_for_sms_code(
             try:
                 from core.registration_service import check_stop_requested
                 check_stop_requested()
-            except ImportError:
-                pass
+            except ImportError as _ignored_exc:
+                logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
             round_no += 1
             elapsed = max(0, int(total_wait - max(0, deadline - time.time())))
             remaining_before = max(0, int(deadline - time.time()))
@@ -576,8 +576,8 @@ def _do_cancel_sync(activation_id: str, http_factory) -> None:
     finally:
         try:
             http.close()
-        except Exception:
-            pass
+        except Exception as _ignored_exc:
+            logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
 
 
 def cancel(activation_id: str, http: CurlSession | None = None, background: bool = True) -> None:

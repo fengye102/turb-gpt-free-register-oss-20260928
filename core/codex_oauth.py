@@ -265,8 +265,8 @@ def _cpa_request_json(method: str, path: str, body: dict | None = None) -> dict:
     finally:
         try:
             session.close()
-        except Exception:
-            pass
+        except Exception as _ignored_exc:
+            logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
 
 
 def _sub2_codex_base() -> str:
@@ -330,8 +330,8 @@ def _sub2_codex_request_json(method: str, path: str, body: dict | None = None) -
     finally:
         try:
             session.close()
-        except Exception:
-            pass
+        except Exception as _ignored_exc:
+            logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
 
 
 def _request_sub2_authorize_url() -> dict:
@@ -380,8 +380,8 @@ def _summarize_sub2_response(payload: dict) -> str:
         if isinstance(payload, dict):
             compact = {k: payload.get(k) for k in ("code", "message", "success") if k in payload}
             return str(compact or payload)[:300]
-    except Exception:
-        pass
+    except Exception as _ignored_exc:
+        logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
     return str(payload)[:300]
 
 
@@ -461,8 +461,8 @@ def _cpa_request_raw(method: str, path: str, body: dict | None = None, *, respon
                 payload = resp.json()
                 if isinstance(payload, dict):
                     msg = payload.get("error") or payload.get("message") or payload.get("detail") or payload.get("reason") or ""
-            except Exception:
-                pass
+            except Exception as _ignored_exc:
+                logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
             raise RuntimeError(
                 f"[Codex][CPA] 管理接口失败 {method.upper()} {path} status={resp.status_code}: "
                 f"{msg or (resp.text or '')[:300]}"
@@ -473,8 +473,8 @@ def _cpa_request_raw(method: str, path: str, body: dict | None = None, *, respon
     finally:
         try:
             session.close()
-        except Exception:
-            pass
+        except Exception as _ignored_exc:
+            logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
 
 
 def list_cpa_codex_auth_files() -> list[dict]:
@@ -751,8 +751,8 @@ def _response_text(resp) -> str:
                     parts.append(str(x))
             walk(data)
             return " ".join(parts)
-    except Exception:
-        pass
+    except Exception as _ignored_exc:
+        logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
     return str(getattr(resp, 'text', '') or '')
 
 
@@ -1006,8 +1006,8 @@ def _get_workspace_id(session: BrowserSession) -> str:
             if c.name == "oai-client-auth-session":
                 raw = c.value
                 break
-    except Exception:
-        pass
+    except Exception as _ignored_exc:
+        logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
     if not raw:
         # 退而求其次：从 cookies 字典拿
         try:
@@ -1386,8 +1386,8 @@ def run_codex_oauth(
                 if not bool(getattr(_cloak_cfg, "CLOAK_KEEP_BROWSER_OPEN", False)):
                     try:
                         driver.quit()
-                    except Exception:
-                        pass
+                    except Exception as _ignored_exc:
+                        logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
         if oauth_driver not in ("protocol", "api", "http"):
             raise RuntimeError(f"[Codex] 不支持的 CODEX_OAUTH_DRIVER={oauth_driver!r}，可选 protocol / roxy / cloak / browser_use / skyvern")
     except ImportError:

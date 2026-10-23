@@ -62,15 +62,15 @@ def _parse_email_date(msg) -> float | None:
         if dt.tzinfo is None:
             dt = dt.replace(tzinfo=timezone.utc)
         return dt.timestamp()
-    except Exception:
-        pass
+    except Exception as _ignored_exc:
+        logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
     try:
         parsed = email_lib.utils.parsedate(date_str)
         if parsed:
             import calendar
             return calendar.timegm(parsed)
-    except Exception:
-        pass
+    except Exception as _ignored_exc:
+        logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
     return None
 
 
@@ -80,8 +80,8 @@ def _decode_part_payload(part) -> str:
         if payload:
             charset = part.get_content_charset() or "utf-8"
             return payload.decode(charset, errors="replace")
-    except Exception:
-        pass
+    except Exception as _ignored_exc:
+        logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
     return ""
 
 
@@ -224,8 +224,8 @@ def _connect_imap() -> imaplib.IMAP4_SSL:
                 "ID",
                 '("name" "Mozilla Thunderbird" "version" "128.0" "vendor" "Mozilla")',
             )
-        except Exception:
-            pass
+        except Exception as _ignored_exc:
+            logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
         mail.login(qq_email, password)
         mail.select("INBOX")
         return mail
@@ -384,8 +384,8 @@ def pick_domain_email() -> str:
                 try:
                     from core.db import release_domain_email as _release_used
                     _release_used(email, status="used", note="duck alias already consumed")
-                except Exception:
-                    pass
+                except Exception as _ignored_exc:
+                    logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
                 time.sleep(0.5 * attempt)
                 continue
             seen.add(email)
@@ -468,8 +468,8 @@ def fetch_latest_otp(
             if mail:
                 try:
                     mail.logout()
-                except Exception:
-                    pass
+                except Exception as _ignored_exc:
+                    logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
 
         # 按时间降序排列
         messages.sort(key=lambda m: m.get("date") or "", reverse=True)

@@ -53,8 +53,8 @@ def _deactivate_job(job_id: int) -> None:
         _ACTIVE_JOBS.discard(int(job_id))
     try:
         delattr(_THREAD_CTX, "job_id")
-    except Exception:
-        pass
+    except Exception as _ignored_exc:
+        logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
 
 
 def is_stop_requested(job_id: int | None = None) -> bool:
@@ -86,8 +86,8 @@ def _append_job_log(job_id: int, message: str) -> None:
         ts = datetime.now().strftime("%H:%M:%S")
         with Path(log_file).open("a", encoding="utf-8") as f:
             f.write(f"{ts} [WARNING] [manual-stop] {message}\n")
-    except Exception:
-        pass
+    except Exception as _ignored_exc:
+        logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
 
 
 def _random_display_name() -> str:
@@ -515,8 +515,8 @@ def _account_for_job(job: dict) -> dict | None:
             account = db.get_account(int(account_id))
             if account is not None:
                 return account
-        except (TypeError, ValueError):
-            pass
+        except (TypeError, ValueError) as _ignored_exc:
+            logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
     email = str(job.get("email") or "").strip()
     return db.get_account_by_email(email) if email else None
 

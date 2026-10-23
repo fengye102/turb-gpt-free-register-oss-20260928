@@ -112,18 +112,18 @@ class CloakElement:
             if self.locator is not None:
                 self.locator.focus(timeout=3000)
                 return
-        except Exception:
-            pass
+        except Exception as _ignored_exc:
+            logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
         try:
             if self.handle is not None:
                 self.handle.focus()
                 return
-        except Exception:
-            pass
+        except Exception as _ignored_exc:
+            logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
         try:
             self.click()
-        except Exception:
-            pass
+        except Exception as _ignored_exc:
+            logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
 
     def _type_literal(self, text: str) -> None:
         if not text:
@@ -239,8 +239,8 @@ class CloakSeleniumDriver:
             try:
                 proc.kill()
                 killed += 1
-            except Exception:
-                pass
+            except Exception as _ignored_exc:
+                logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
         return killed
 
     def _stall_watchdog(self) -> None:
@@ -275,8 +275,8 @@ class CloakSeleniumDriver:
         try:
             if self.context is not None:
                 return list(self.context.pages)
-        except Exception:
-            pass
+        except Exception as _ignored_exc:
+            logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
         try:
             contexts = list(getattr(self.browser, "contexts", []) or [])
             pages = []
@@ -292,16 +292,16 @@ class CloakSeleniumDriver:
         self.page = pages[idx]
         try:
             self.page.bring_to_front()
-        except Exception:
-            pass
+        except Exception as _ignored_exc:
+            logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
 
     def set_page_load_timeout(self, seconds: int) -> None:
         self._page_load_timeout_ms = int(seconds) * 1000
         try:
             self.page.set_default_navigation_timeout(self._page_load_timeout_ms)
             self.page.set_default_timeout(self._page_load_timeout_ms)
-        except Exception:
-            pass
+        except Exception as _ignored_exc:
+            logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
 
     def get(self, url: str) -> None:
         self.page.goto(url, wait_until="domcontentloaded", timeout=self._page_load_timeout_ms)
@@ -320,12 +320,12 @@ class CloakSeleniumDriver:
         try:
             if self.context is not None:
                 self.context.close()
-        except Exception:
-            pass
+        except Exception as _ignored_exc:
+            logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
         try:
             self.browser.close()
-        except Exception:
-            pass
+        except Exception as _ignored_exc:
+            logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
 
     def find_elements(self, by: Any, selector: str) -> list[CloakElement]:
         loc = self._locator(by, selector)
@@ -401,8 +401,8 @@ class CloakSeleniumDriver:
         finally:
             try:
                 handle.dispose()
-            except Exception:
-                pass
+            except Exception as _ignored_exc:
+                logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
 
     # 页面在评估 JS 的瞬间发生跳转（Cloudflare 挑战、auth 重定向、SPA 路由）时，
     # Playwright 会抛 "Execution context was destroyed"；这不是流程错误，等页面

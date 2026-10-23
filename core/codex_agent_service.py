@@ -155,8 +155,8 @@ def _run_generate(*, account_id: int, email: str, access_token: str, trigger: st
                 last_exc = exc
                 try:
                     env.session.close()
-                except Exception:
-                    pass
+                except Exception as _ignored_exc:
+                    logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
                 env = None
                 if attempt >= attempts or not _retryable_agent_error(exc):
                     raise
@@ -284,8 +284,8 @@ def _run_generate(*, account_id: int, email: str, access_token: str, trigger: st
         if env is not None:
             try:
                 env.session.close()
-            except Exception:
-                pass
+            except Exception as _ignored_exc:
+                logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
         _QUEUE_SLOTS.release()
 
 

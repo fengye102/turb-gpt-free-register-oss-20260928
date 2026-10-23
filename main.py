@@ -181,8 +181,8 @@ def _run_registration_via_protocol(
         logger.error("[协议引擎] %s", err)
         try:
             release_email(email, status="available", note=err[:150])
-        except Exception:
-            pass
+        except Exception as _ignored_exc:
+            logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
         return {"success": False, "email": email, "error": err, "network_traffic": None}
 
     # ⚠️ 代理必须是真的。
@@ -210,8 +210,8 @@ def _run_registration_via_protocol(
         logger.error("[协议引擎] %s", err)
         try:
             release_email(email, status="available", note=err[:150])
-        except Exception:
-            pass
+        except Exception as _ignored_exc:
+            logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
         return {"success": False, "email": email, "error": err, "network_traffic": None}
 
     logger.info("[协议引擎] 注册 %s（来源=%s，代理=%s）", email, source, resolved_proxy)
@@ -223,8 +223,8 @@ def _run_registration_via_protocol(
         logger.error("[协议引擎] %s 异常：%s", email, err)
         try:
             release_email(email, status="available", note=f"协议引擎异常: {err[:140]}")
-        except Exception:
-            pass
+        except Exception as _ignored_exc:
+            logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
         return {"success": False, "email": email, "error": err, "network_traffic": None}
 
     if not data.get("ok"):
@@ -232,8 +232,8 @@ def _run_registration_via_protocol(
         logger.error("[协议引擎] %s 失败：%s", email, err[:300])
         try:
             release_email(email, status="available", note=f"协议引擎失败: {err[:140]}")
-        except Exception:
-            pass
+        except Exception as _ignored_exc:
+            logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
         return {"success": False, "email": email, "error": err, "network_traffic": None}
 
     d = data.get("result") or {}
@@ -478,8 +478,8 @@ def main():
     try:
         from tools.reap_roxy_zombies import reap_roxy_zombies
         reap_roxy_zombies(quiet=True)
-    except Exception:
-        pass
+    except Exception as _ignored_exc:
+        logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
     sys.exit(0 if success_count == args.count else 1)
 
 

@@ -6,6 +6,7 @@ SQLite 持久化层（JSON/TXT 仅用于首次迁移）。
 """
 import hashlib
 import json
+import logging
 import sqlite3
 import threading
 import uuid
@@ -13,6 +14,8 @@ from contextlib import closing
 from datetime import datetime
 from pathlib import Path
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 _DATA_DIR = _PROJECT_ROOT
@@ -1073,8 +1076,8 @@ def claim_account_codex_agent(acc_id: int, trigger: str = "manual") -> bool:
                 started_at = datetime.fromisoformat(str(row.get(stamp_key) or ""))
                 if (datetime.now() - started_at).total_seconds() < stale_after:
                     return False
-            except (TypeError, ValueError):
-                pass
+            except (TypeError, ValueError) as _ignored_exc:
+                logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
         now = _now()
         row["codex_agent_status"] = "queued"
         row["codex_agent_ok"] = False
@@ -1217,8 +1220,8 @@ def claim_account_plan_check(
                 started_at = datetime.fromisoformat(str(row.get(stamp_key) or ""))
                 if (datetime.now() - started_at).total_seconds() < stale_after:
                     return False
-            except (TypeError, ValueError):
-                pass
+            except (TypeError, ValueError) as _ignored_exc:
+                logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
 
         now = _now()
         row["plan_check_status"] = "queued"
@@ -1451,8 +1454,8 @@ def claim_account_extract(acc_id: int, trigger: str = "manual", link_type: str =
                 started_at = datetime.fromisoformat(str(row.get(stamp_key) or ""))
                 if (datetime.now() - started_at).total_seconds() < stale_after:
                     return False
-            except (TypeError, ValueError):
-                pass
+            except (TypeError, ValueError) as _ignored_exc:
+                logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
         now = _now()
         if retry_uncertain:
             row["extract_link_retry_previous_status"] = "uncertain"
@@ -2013,8 +2016,8 @@ def claim_account_totp_setup(acc_id: int, trigger: str = "manual") -> bool:
                 started_at = datetime.fromisoformat(str(row.get(stamp_key) or ""))
                 if (datetime.now() - started_at).total_seconds() < stale_after:
                     return False
-            except (TypeError, ValueError):
-                pass
+            except (TypeError, ValueError) as _ignored_exc:
+                logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
         now = _now()
         row["totp_setup_status"] = "queued"
         row["totp_setup_ok"] = False
@@ -2135,8 +2138,8 @@ def claim_account_live_check(acc_id: int, trigger: str = "manual") -> bool:
                 started_at = datetime.fromisoformat(str(row.get(stamp_key) or ""))
                 if (datetime.now() - started_at).total_seconds() < stale_after:
                     return False
-            except (TypeError, ValueError):
-                pass
+            except (TypeError, ValueError) as _ignored_exc:
+                logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
         now = _now()
         row["live_check_status"] = "queued"
         row["live_check_ok"] = False
@@ -3303,8 +3306,8 @@ def delete_job(job_id: int, *, delete_log: bool = True, allow_running: bool = Fa
         if log_file:
             try:
                 Path(log_file).unlink(missing_ok=True)
-            except Exception:
-                pass
+            except Exception as _ignored_exc:
+                logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
     return True
 
 
@@ -3436,8 +3439,8 @@ def migrate_legacy_files() -> dict:
             emails = json.loads(used.read_text(encoding="utf-8"))
             for email in emails:
                 release_outlook(email, status="used")
-        except Exception:
-            pass
+        except Exception as _ignored_exc:
+            logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
 
     return summary
 

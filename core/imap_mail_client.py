@@ -193,8 +193,8 @@ def fetch_latest_otp(
             if mail is not None:
                 try:
                     mail.logout()
-                except Exception:
-                    pass
+                except Exception as _ignored_exc:
+                    logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
 
         messages.sort(key=lambda item: item.get("date") or "", reverse=True)
         for item in messages:

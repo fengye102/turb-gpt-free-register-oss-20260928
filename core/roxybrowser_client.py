@@ -215,8 +215,8 @@ def _pop_session_name() -> str:
             _SESSION_FILE.write_text(
                 _json.dumps(items, ensure_ascii=False, indent=1) + "\n", encoding="utf-8"
             )
-        except Exception:
-            pass
+        except Exception as _ignored_exc:
+            logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
     logger.info("[Roxy] 使用预分配住宅会话: %s（剩余 %d 个）", name, len(items))
     return name
 

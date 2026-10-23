@@ -134,8 +134,8 @@ def _network_preflight_with_retry(
         if session is not None:
             try:
                 session.session.close()
-            except Exception:
-                pass
+            except Exception as _ignored_exc:
+                logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
         # 保留 None / "" 的语义差异：显式空字符串必须是真直连。
         session = _new_fingerprint_pinned_session(email, proxy, state)
         logger.info(
@@ -153,8 +153,8 @@ def _network_preflight_with_retry(
             if attempt >= max_attempts or not _is_retryable_network_error(exc):
                 try:
                     session.session.close()
-                except Exception:
-                    pass
+                except Exception as _ignored_exc:
+                    logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
                 raise
             logger.warning(
                 "[查活] 网络预检失败（%s/%s），重新建立会话重试：%s",
@@ -805,8 +805,8 @@ def check_account_liveness(
             if session is not None:
                 try:
                     session.session.close()
-                except Exception:
-                    pass
+                except Exception as _ignored_exc:
+                    logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
             if fh is not None:
                 root_logger.removeHandler(fh)
                 fh.close()

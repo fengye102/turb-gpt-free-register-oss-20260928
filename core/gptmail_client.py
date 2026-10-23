@@ -100,8 +100,8 @@ def _timestamp(item: dict) -> float | None:
     try:
         if raw is not None:
             return float(raw)
-    except (TypeError, ValueError):
-        pass
+    except (TypeError, ValueError) as _ignored_exc:
+        logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
 
     created_at = str(item.get("created_at") or "").strip()
     if not created_at:

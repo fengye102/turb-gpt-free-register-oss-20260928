@@ -493,8 +493,8 @@ def setup_2fa(
     # 一旦服务端在后续清理时吊销旧会话，账号就会表现为"有记录但 token 已失效"。
     try:
         session.refreshed_access_token = new_token
-    except Exception:
-        pass
+    except Exception as _ignored_exc:
+        logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
     logger.info("[2FA] 已拿到新 token")
     human_delay("api")
 

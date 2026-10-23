@@ -21,8 +21,11 @@
 """
 from __future__ import annotations
 
+import logging
 import threading
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 _INSTALLED = False
 _LOCK = threading.Lock()
@@ -98,8 +101,8 @@ def install() -> bool:
                 row["requests"] += 1
                 row["download_bytes"] += down
                 row["upload_bytes"] += up
-            except Exception:
-                pass
+            except Exception as _ignored_exc:
+                logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
             return resp
 
         curl_requests.Session.request = _counted

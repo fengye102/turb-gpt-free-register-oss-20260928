@@ -215,8 +215,8 @@ def _agent_headers(access_token: str, env: Any | None = None) -> dict[str, str]:
             headers["oai-language"] = env.navigator_language()
             if hasattr(env, "_attach_auth_rum_headers"):
                 env._attach_auth_rum_headers(headers)
-        except Exception:
-            pass
+        except Exception as _ignored_exc:
+            logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
     return headers
 
 

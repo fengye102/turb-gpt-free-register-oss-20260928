@@ -115,8 +115,8 @@ def _run_live_check(*, account_id: int, email: str, proxy: str | None, trigger: 
         logger.exception("[查活] 后台异常: %s", email)
         try:
             _append_log(email, f"[查活] 后台异常：{result['error']}")
-        except Exception:
-            pass
+        except Exception as _ignored_exc:
+            logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
         return result
     finally:
         with _LOCK:

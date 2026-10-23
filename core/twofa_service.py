@@ -117,8 +117,8 @@ def _run_twofa(
             logger.exception("[2FA] 写回失败状态失败: account_id=%s", account_id)
         try:
             _append_log(email, f"[2FA] 失败：{result['error']}")
-        except Exception:
-            pass
+        except Exception as _ignored_exc:
+            logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
         logger.exception("[2FA] 后台异常: %s", email)
         return result
     finally:
@@ -126,8 +126,8 @@ def _run_twofa(
             try:
                 root_logger.removeHandler(fh)
                 fh.close()
-            except Exception:
-                pass
+            except Exception as _ignored_exc:
+                logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
         with _LOCK:
             _RUNNING.discard(int(account_id))
         release_account_lock(account_id)
@@ -160,8 +160,8 @@ def acquire_account_lock(account_id: int) -> bool:
                 # 不删的话下面的 O_CREAT|O_EXCL 一定 FileExistsError → 永远返回
                 # False → 这个账号的 2FA 就永久卡死，drain 每次看它都是 busy。
                 p.unlink(missing_ok=True)
-            except OSError:
-                pass
+            except OSError as _ignored_exc:
+                logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
         fd = os.open(str(p), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
         os.write(fd, str(os.getpid()).encode("ascii"))
         os.close(fd)
@@ -176,8 +176,8 @@ def release_account_lock(account_id: int) -> None:
     try:
         p = _LOCK_DIR / ("acc_%d.lock" % int(account_id))
         p.unlink(missing_ok=True)
-    except Exception:
-        pass
+    except Exception as _ignored_exc:
+        logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
 
 
 def enqueue_account_totp_setup(

@@ -350,8 +350,8 @@ def _message_timestamp(item: dict) -> float | None:
                 if dt.tzinfo is None:
                     dt = dt.replace(tzinfo=timezone.utc)
             return dt.timestamp()
-        except ValueError:
-            pass
+        except ValueError as _ignored_exc:
+            logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
         try:
             dt = parsedate_to_datetime(text)
             if dt.tzinfo is None:

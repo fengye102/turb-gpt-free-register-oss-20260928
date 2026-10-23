@@ -359,8 +359,8 @@ def _retry_wait_seconds(resp: Any, base_delay: float, attempt: int) -> float:
         retry_after = (getattr(resp, "headers", {}) or {}).get("retry-after")
         if retry_after is not None:
             return max(0.0, min(30.0, float(retry_after)))
-    except (TypeError, ValueError):
-        pass
+    except (TypeError, ValueError) as _ignored_exc:
+        logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
     return max(0.0, min(30.0, base_delay * attempt))
 
 
@@ -527,8 +527,8 @@ def check_account_plan(
             if env is not None:
                 try:
                     env.session.close()
-                except Exception:
-                    pass
+                except Exception as _ignored_exc:
+                    logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
 
         last_result = last_result or {"ok": False, "checked_at": now_iso(), "error": "未知错误", "retryable": True}
         last_result.update({
@@ -560,8 +560,8 @@ def check_account_plan(
                                    route.get("proxy_used"), _new.get("proxy_used"))
                     route = _new
                     route_meta = {k: v for k, v in route.items() if k != "proxy"}
-            except Exception:
-                pass
+            except Exception as _ignored_exc:
+                logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
 
         wait_seconds = _retry_wait_seconds(resp, base_delay, attempt)
         logger.warning(

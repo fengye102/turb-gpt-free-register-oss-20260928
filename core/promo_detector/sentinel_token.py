@@ -18,10 +18,13 @@ Node 侧再用同一指纹配置解 PoW 得到 p（gAAAAAB…~S），拼出完�
 from __future__ import annotations
 
 import json
+import logging
 import os
 import subprocess
 import time
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 _BRIDGE_VERSION = "20260810913b"
 _ASSETS_DIR = Path(__file__).with_name("sentinel_assets")
@@ -73,8 +76,8 @@ def mint_sentinel_sync(
             if isinstance(parsed, dict) and parsed.get("p") and parsed.get("c") and parsed.get("id"):
                 log("sentinel", "run", "使用 MIN_GCASH_SENTINEL_TOKEN 注入的哨兵令牌（人工抓取）")
                 return parsed
-        except Exception:
-            pass
+        except Exception as _ignored_exc:
+            logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
         log("sentinel", "warn", "MIN_GCASH_SENTINEL_TOKEN 不是合法哨兵 JSON，忽略")
 
     if not _BRIDGE_JS.is_file():

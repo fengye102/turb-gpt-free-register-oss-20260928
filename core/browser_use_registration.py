@@ -139,8 +139,8 @@ def _safe_scroll_locator(loc, *, timeout: int = 1800) -> None:
         logger.debug("[BrowserUse] scroll_into_view_if_needed 不稳定，使用轻量滚动兜底：%s", str(exc)[:160])
     try:
         loc.evaluate("el => { try { el.scrollIntoView({block:'center', inline:'center', behavior:'instant'}); } catch(e) {} }")
-    except Exception:
-        pass
+    except Exception as _ignored_exc:
+        logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
 
 
 def _human_click_locator(loc, *, timeout: int = 3000) -> None:
@@ -150,8 +150,8 @@ def _human_click_locator(loc, *, timeout: int = 3000) -> None:
     try:
         loc.hover(timeout=min(1600, max(700, timeout)))
         _human_pause(0.18, 0.55)
-    except Exception:
-        pass
+    except Exception as _ignored_exc:
+        logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
     try:
         loc.click(timeout=timeout, delay=random.randint(80, 260))
     except Exception as exc:
@@ -286,8 +286,8 @@ def _registration_password() -> str:
         configured = str(getattr(_register_cfg, "REGISTER_PASSWORD", "") or "").strip()
         if configured:
             return configured
-    except Exception:
-        pass
+    except Exception as _ignored_exc:
+        logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
     return _generate_password()
 
 
@@ -380,8 +380,8 @@ def _post_register_dwell(page, context, *, provider_prefix: str, email: str) -> 
                 page = _pick_live_page(context, page) or page
                 if page is not None:
                     page.evaluate("() => { try { window.scrollBy(0, Math.floor(Math.random()*80)-40); } catch(e) {} return location.href; }")
-            except Exception:
-                pass
+            except Exception as _ignored_exc:
+                logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
             last_touch = time.time()
         time.sleep(random.uniform(0.8, 1.8))
 
@@ -463,8 +463,8 @@ def _click_first(page, selectors: list[str], timeout_ms: int | None = None) -> b
             try:
                 _human_click_locator(loc, timeout=3000)
                 return True
-            except Exception:
-                pass
+            except Exception as _ignored_exc:
+                logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
         time.sleep(0.15 if _fast_mode() else 0.3)
     return False
 
@@ -995,8 +995,8 @@ def _is_signup_password_page(page) -> bool:
         state = _quick_auth_state(page)
         if str(state.get("state") or "") == "password":
             return True
-    except Exception:
-        pass
+    except Exception as _ignored_exc:
+        logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
     try:
         loc = _visible_locator(
             page,
@@ -1200,8 +1200,8 @@ def _fill_password_if_present(page, email: str, timeout: int = 25, context=None)
                         time.sleep(0.4 if _fast_mode() else 1.0)
                         continue
                     logger.info("[BrowserUse] 已在邮箱验证码页，但未找到“使用密码继续”按钮，继续等待密码页：url=%s", quick.get("url") or _page_url(page) or "-")
-        except Exception:
-            pass
+        except Exception as _ignored_exc:
+            logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
         if time.time() - last_heartbeat > 3:
             try:
                 page = _browser_use_heartbeat(page, context=context, label="password-detect")
@@ -1367,8 +1367,8 @@ def _fill_password_if_present(page, email: str, timeout: int = 25, context=None)
                 ):
                     try:
                         page.keyboard.press("Enter")
-                    except Exception:
-                        pass
+                    except Exception as _ignored_exc:
+                        logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
             if state_name not in ("password", "login_password"):
                 return password
             time.sleep(0.25 if _fast_mode() else 0.5)
@@ -1437,8 +1437,8 @@ def _clear_otp_inputs(page) -> None:
               }
             }"""
         )
-    except Exception:
-        pass
+    except Exception as _ignored_exc:
+        logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
 
 
 def _click_continue(page) -> None:
@@ -1586,8 +1586,8 @@ def _wait_after_otp(page, timeout: int = 12) -> str:
         body = ""
         try:
             body = (page.locator("body").inner_text(timeout=1000) or "").lower()
-        except Exception:
-            pass
+        except Exception as _ignored_exc:
+            logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
         if any(x in url for x in ("about-you", "profile", "chatgpt.com", "create-account/about")):
             return "accepted"
         if any(x in body for x in ("incorrect", "invalid", "expired", "错误", "过期", "无效")) and _is_email_verification_page(page):
@@ -1659,8 +1659,8 @@ def _fill_birthday_fields(page, birthday: str) -> None:
             else:
                 _human_pause(0.08, 0.22)
                 _human_fill_locator(page, loc, value, timeout=5000)
-        except Exception:
-            pass
+        except Exception as _ignored_exc:
+            logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
 
 
 
@@ -1746,8 +1746,8 @@ def _fill_spinbutton_birthday(page, birthday: str) -> bool:
                 _human_pause(0.05, 0.15)
                 page.keyboard.type(str(value), delay=random.randint(90, 220) if _fast_mode() else random.randint(120, 320))
                 ok = True
-            except Exception:
-                pass
+            except Exception as _ignored_exc:
+                logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
     if ok:
         try:
             page.evaluate(
@@ -1762,8 +1762,8 @@ def _fill_spinbutton_birthday(page, birthday: str) -> bool:
                 }""",
                 birthday,
             )
-        except Exception:
-            pass
+        except Exception as _ignored_exc:
+            logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
     return ok
 
 
@@ -1829,8 +1829,8 @@ def _human_complete_profile(page, name: str, birthday: str) -> dict:
                     _human_pause(0.25, 0.7)
             except Exception:
                 continue
-    except Exception:
-        pass
+    except Exception as _ignored_exc:
+        logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
     info["checkboxCount"] = checkbox_count
 
     submitted = _click_first(
@@ -2096,8 +2096,8 @@ def _complete_profile_page(page, name: str, birthday: str, timeout: int = 60) ->
         body = ""
         try:
             body = (page.locator("body").inner_text(timeout=800) or "").lower()
-        except Exception:
-            pass
+        except Exception as _ignored_exc:
+            logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
         looks_profile = any(x in url for x in ("about-you", "profile", "create-account/about", "signup/profile")) or any(x in body for x in ("birthday", "birth", "age", "name", "誕生日", "年齢", "名前", "生日", "年龄", "姓名"))
 
         if looks_profile:
@@ -2186,14 +2186,14 @@ def _pick_live_page(context, preferred=None):
                     pages.append(p)
             except Exception:
                 continue
-    except Exception:
-        pass
+    except Exception as _ignored_exc:
+        logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
     if preferred is not None:
         try:
             if not preferred.is_closed() and preferred not in pages:
                 pages.insert(0, preferred)
-        except Exception:
-            pass
+        except Exception as _ignored_exc:
+            logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
     if not pages:
         return None
     if len(pages) == 1:
@@ -2413,8 +2413,8 @@ def _read_chatgpt_session_via_page(page, timeout_ms: int = 5000) -> dict | None:
     """页面内读取 session，加 JS AbortController，避免 page.evaluate 无限挂住。"""
     try:
         page.set_default_timeout(max(2000, timeout_ms + 1000))
-    except Exception:
-        pass
+    except Exception as _ignored_exc:
+        logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
     try:
         return page.evaluate(
             """async ({timeoutMs}) => {
@@ -2902,8 +2902,8 @@ def run_browser_use_registration(
                     status="failed" if create_acknowledged else "available",
                     note=f"BrowserUse注册失败: {str(exc)[:180]}",
                 )
-        except Exception:
-            pass
+        except Exception as _ignored_exc:
+            logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
         return {
             "success": False,
             "email": email,
@@ -2915,12 +2915,12 @@ def run_browser_use_registration(
         try:
             if browser is not None:
                 browser.close()
-        except Exception:
-            pass
+        except Exception as _ignored_exc:
+            logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
         if provider_prefix == "skyvern" and 'client' in locals() and hasattr(client, "close_browser_session") and getattr(session_info_open, "session_id", ""):
             try:
                 client.close_browser_session(session_info_open.session_id)
-            except Exception:
-                pass
+            except Exception as _ignored_exc:
+                logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
         _set_log_provider_label("BrowserUse")
         _set_cloud_provider("browser_use")

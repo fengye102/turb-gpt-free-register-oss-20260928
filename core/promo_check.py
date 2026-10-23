@@ -77,8 +77,8 @@ def detect_proxy_country(proxy: str | None, timeout: float = 6.0) -> str:
     finally:
         try:
             session.close()
-        except Exception:
-            pass
+        except Exception as _ignored_exc:
+            logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
     return ""
 
 
@@ -243,8 +243,8 @@ def _checkout_one(
                 # so-token 头由 risk.checkout_risk_headers 单独产出，不在这里重算。
                 if isinstance(parsed, dict) and parsed.pop("_so", None) is not None:
                     headers["openai-sentinel-token"] = json.dumps(parsed, separators=(",", ":"), ensure_ascii=False)
-            except Exception:
-                pass
+            except Exception as _ignored_exc:
+                logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
         response = _req(session, "POST", "https://chatgpt.com" + path, json=payload, headers=headers, timeout=timeout)
         try:
             data = response.json()

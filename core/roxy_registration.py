@@ -43,8 +43,8 @@ def _log_prefix(driver=None) -> str:
             return explicit
         if driver is not None and driver.__class__.__name__ == "CloakSeleniumDriver":
             return "[Cloak注册]"
-    except Exception:
-        pass
+    except Exception as _ignored_exc:
+        logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
     return "[Roxy注册]"
 
 
@@ -141,8 +141,8 @@ def _safe_get(driver, url: str, *, timeout: int = 45, attempts: int = 2, accept_
             try:
                 driver.set_page_load_timeout(max(10, int(timeout)))
                 driver.set_script_timeout(8)
-            except Exception:
-                pass
+            except Exception as _ignored_exc:
+                logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
             driver.get(url)
             return
         except TimeoutException as exc:
@@ -153,8 +153,8 @@ def _safe_get(driver, url: str, *, timeout: int = 45, attempts: int = 2, accept_
             )
             try:
                 driver.execute_script("window.stop();")
-            except Exception:
-                pass
+            except Exception as _ignored_exc:
+                logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
             time.sleep(1.0)
             try:
                 current = str(driver.current_url or "").lower()
@@ -176,8 +176,8 @@ def _safe_get(driver, url: str, *, timeout: int = 45, attempts: int = 2, accept_
             if attempt < attempts:
                 try:
                     driver.get("about:blank")
-                except Exception:
-                    pass
+                except Exception as _ignored_exc:
+                    logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
                 time.sleep(1.5 * attempt)
                 continue
         except WebDriverException as exc:
@@ -190,8 +190,8 @@ def _safe_get(driver, url: str, *, timeout: int = 45, attempts: int = 2, accept_
         finally:
             try:
                 driver.set_page_load_timeout(old_timeout)
-            except Exception:
-                pass
+            except Exception as _ignored_exc:
+                logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
     raise last_exc or RuntimeError(f"页面跳转失败: {url}")
 
 
@@ -232,8 +232,8 @@ def _apply_browser_automation_mask(driver) -> None:
             driver.execute_cdp_cmd("Page.addScriptToEvaluateOnNewDocument", {"source": script})
         try:
             driver.execute_script(script)
-        except Exception:
-            pass
+        except Exception as _ignored_exc:
+            logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
         logger.info("%s 已注入浏览器自动化特征弱化脚本", _log_prefix(driver))
     except Exception as exc:
         logger.debug("%s 注入自动化特征弱化脚本失败：%s", _log_prefix(driver), exc)
@@ -252,8 +252,8 @@ def _human_scroll_to(driver, el) -> None:
     except Exception:
         try:
             driver.execute_script("arguments[0].scrollIntoView({block:'center'});", el)
-        except Exception:
-            pass
+        except Exception as _ignored_exc:
+            logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
 
 
 def _human_click(driver, el, *, label: str = "") -> None:
@@ -307,8 +307,8 @@ def _human_type_text(driver, el, value: str, *, clear: bool = True) -> None:
         if clear:
             try:
                 el.clear()
-            except Exception:
-                pass
+            except Exception as _ignored_exc:
+                logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
         el.send_keys(value)
         return
     try:
@@ -324,8 +324,8 @@ def _human_type_text(driver, el, value: str, *, clear: bool = True) -> None:
                 import platform
                 if platform.system().lower() != "darwin":
                     mod = Keys.CONTROL
-            except Exception:
-                pass
+            except Exception as _ignored_exc:
+                logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
             try:
                 el.send_keys(mod, "a")
                 time.sleep(random.uniform(0.04, 0.16))
@@ -333,8 +333,8 @@ def _human_type_text(driver, el, value: str, *, clear: bool = True) -> None:
             except Exception:
                 try:
                     el.clear()
-                except Exception:
-                    pass
+                except Exception as _ignored_exc:
+                    logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
         text = str(value)
         i = 0
         while i < len(text):
@@ -366,8 +366,8 @@ def _page_warmup(driver, *, reason: str = "") -> None:
                 "x": random.randint(80, 360),
                 "y": random.randint(80, 260),
             })
-    except Exception:
-        pass
+    except Exception as _ignored_exc:
+        logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
 
 
 def _find_any(driver, selectors: list[str], timeout: int | None = None):
@@ -651,8 +651,8 @@ def _current_email_input_value(driver) -> str:
             value = str(item.get("value") or "").strip()
             if "@" in value:
                 return value
-    except Exception:
-        pass
+    except Exception as _ignored_exc:
+        logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
     return ""
 
 
@@ -860,8 +860,8 @@ def _submit_email_via_browser_nextauth(driver, email: str) -> dict:
     try:
         try:
             driver.set_script_timeout(25)
-        except Exception:
-            pass
+        except Exception as _ignored_exc:
+            logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
         result = driver.execute_async_script(r"""
         const email = String(arguments[0] || '').trim();
         const did = String(arguments[1] || '');
@@ -942,8 +942,8 @@ def _submit_email_via_browser_nextauth(driver, email: str) -> dict:
     finally:
         try:
             driver.set_script_timeout(old_script_timeout)
-        except Exception:
-            pass
+        except Exception as _ignored_exc:
+            logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
 
 
 def _email_input_value_state(driver) -> dict:
@@ -1261,8 +1261,8 @@ def _clear_otp_inputs(driver) -> None:
           el.dispatchEvent(new Event('change', {bubbles:true}));
         }
         """)
-    except Exception:
-        pass
+    except Exception as _ignored_exc:
+        logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
 
 
 def _click_resend_email_otp(driver, timeout: int = 20) -> dict:
@@ -1362,8 +1362,8 @@ def _maybe_accept(driver) -> None:
         try:
             _click_any(driver, selectors, timeout=3)
             time.sleep(0.5)
-        except Exception:
-            pass
+        except Exception as _ignored_exc:
+            logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
 
 
 def _page_snapshot(driver) -> dict:
@@ -1610,8 +1610,8 @@ def _fill_birthday_or_age(driver, birthday: str, age: int) -> str | None:
             import platform
             if platform.system().lower() != 'darwin':
                 mod = Keys.CONTROL
-        except Exception:
-            pass
+        except Exception as _ignored_exc:
+            logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
         for selector, value in [
             ('[role="spinbutton"][data-type="year"]', y),
             ('[role="spinbutton"][data-type="month"]', str(m).zfill(2)),
@@ -1662,8 +1662,8 @@ def _registration_password() -> str:
         configured = str(getattr(_register_cfg, 'REGISTER_PASSWORD', '') or '').strip()
         if configured:
             return configured
-    except Exception:
-        pass
+    except Exception as _ignored_exc:
+        logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
     return _generate_roxy_password()
 
 
@@ -2079,8 +2079,8 @@ def _fill_password_page_if_present(driver, email: str, timeout: int = 25) -> str
                     try:
                         from selenium.webdriver.common.keys import Keys
                         driver.switch_to.active_element.send_keys(Keys.ENTER)
-                    except Exception:
-                        pass
+                    except Exception as _ignored_exc:
+                        logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
             if not _is_signup_password_page(driver):
                 return password
             time.sleep(0.5)
@@ -2287,10 +2287,10 @@ def _switch_to_chatgpt_window_if_any(driver) -> bool:
         if current_handle is not None:
             try:
                 driver.switch_to.window(current_handle)
-            except Exception:
-                pass
-    except Exception:
-        pass
+            except Exception as _ignored_exc:
+                logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
+    except Exception as _ignored_exc:
+        logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
     return False
 
 
@@ -2390,8 +2390,8 @@ def run_roxy_registration(
         driver.set_page_load_timeout(int(_cfg.ROXY_SELENIUM_TIMEOUT))
         try:
             driver.set_script_timeout(12)
-        except Exception:
-            pass
+        except Exception as _ignored_exc:
+            logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
         logger.info("[Roxy注册] 开始：%s，profile=%s", email, opened.profile_id)
 
         otp_after_ts = time.time()
@@ -2596,8 +2596,8 @@ def run_roxy_registration(
         if traffic_tracker is not None:
             try:
                 network_traffic = traffic_tracker.stop()
-            except Exception:
-                pass
+            except Exception as _ignored_exc:
+                logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
         if data_saver is not None:
             data_saver.stop()
         logger.error("[Roxy注册] 失败：%s: %s", type(exc).__name__, exc)
@@ -2629,8 +2629,8 @@ def run_roxy_registration(
                     status="disabled" if _consumed else "available",
                     note=f"Roxy注册失败({'已消费-停用' if _consumed else '未消费-放回'}): {_text[:160]}",
                 )
-        except Exception:
-            pass
+        except Exception as _ignored_exc:
+            logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
         return {
             "success": False,
             "email": email,
@@ -2641,14 +2641,14 @@ def run_roxy_registration(
         if traffic_tracker is not None:
             try:
                 traffic_tracker.stop()
-            except Exception:
-                pass
+            except Exception as _ignored_exc:
+                logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
         if data_saver is not None:
             data_saver.stop()
         if driver and not bool(_cfg.ROXY_KEEP_BROWSER_OPEN):
             try:
                 driver.quit()
-            except Exception:
-                pass
+            except Exception as _ignored_exc:
+                logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
         if not bool(_cfg.ROXY_KEEP_BROWSER_OPEN):
             client.cleanup_profile(opened)

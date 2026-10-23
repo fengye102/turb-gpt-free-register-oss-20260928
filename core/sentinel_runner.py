@@ -337,5 +337,5 @@ def generate_sentinel_token(
         # 清理临时文件
         try:
             os.unlink(tmp.name)
-        except OSError:
-            pass
+        except OSError as _ignored_exc:
+            logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)

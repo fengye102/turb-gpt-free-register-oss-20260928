@@ -119,8 +119,8 @@ def _aes_gcm_encrypt(key: bytes, iv: bytes, plaintext: bytes) -> bytes:
     try:
         from cryptography.hazmat.primitives.ciphers.aead import AESGCM
         return AESGCM(key).encrypt(iv, plaintext, None)
-    except ImportError:
-        pass
+    except ImportError as _ignored_exc:
+        logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
     # fallback: pycryptodome
     from Crypto.Cipher import AES  # type: ignore
     cipher = AES.new(key, AES.MODE_GCM, nonce=iv)
@@ -487,8 +487,8 @@ def _get_msg_text(msg) -> str:
         if payload:
             charset = msg.get_content_charset() or "utf-8"
             return payload.decode(charset, errors="replace")
-    except Exception:
-        pass
+    except Exception as _ignored_exc:
+        logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
     return str(msg.get_payload() or "")
 
 
@@ -610,8 +610,8 @@ def _ms_access_token(
             data = {}
             try:
                 data = resp.json()
-            except Exception:
-                pass
+            except Exception as _ignored_exc:
+                logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
             if resp.status_code == 200 and isinstance(data, dict) and data.get("access_token"):
                 expires_in = int(data.get("expires_in") or 3600)
                 token = str(data["access_token"])
@@ -661,8 +661,8 @@ def _live_imap_access_token(account: OutlookAccount, http: CurlSession | None = 
         data = {}
         try:
             data = resp.json()
-        except Exception:
-            pass
+        except Exception as _ignored_exc:
+            logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
         token = str((data or {}).get("access_token") or "")
         if resp.status_code == 200 and token:
             expires_in = int((data or {}).get("expires_in") or 3600)
@@ -845,8 +845,8 @@ def _fetch_imap_direct_messages(account: OutlookAccount) -> list[dict]:
         try:
             if mail is not None:
                 mail.logout()
-        except Exception:
-            pass
+        except Exception as _ignored_exc:
+            logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
         http.close()
 
 

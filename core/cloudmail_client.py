@@ -319,8 +319,8 @@ def _parse_time(raw) -> float | None:
         return None
     try:
         return float(raw)
-    except (TypeError, ValueError):
-        pass
+    except (TypeError, ValueError) as _ignored_exc:
+        logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
     text = str(raw).strip()
     for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S", "%Y-%m-%dT%H:%M:%S.%f"):
         try:

@@ -54,8 +54,8 @@ def _ensure_login_entry_page(driver, attempts: int = 3) -> None:
         human_delay("navigate")
         try:
             _maybe_accept(driver)
-        except Exception:
-            pass
+        except Exception as _ignored_exc:
+            logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
         time.sleep(1.5)
 
 
@@ -236,8 +236,8 @@ def run_cloak_registration(
         if traffic_tracker is not None:
             try:
                 network_traffic = traffic_tracker.stop()
-            except Exception:
-                pass
+            except Exception as _ignored_exc:
+                logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
         if data_saver is not None:
             data_saver.stop()
         logger.error("[Cloak注册] 失败：%s: %s", type(exc).__name__, exc)
@@ -246,8 +246,8 @@ def run_cloak_registration(
             if email:
                 from core.email_provider import release_email
                 release_email(email, status="failed" if create_acknowledged else "available", note=f"Cloak注册失败: {str(exc)[:180]}")
-        except Exception:
-            pass
+        except Exception as _ignored_exc:
+            logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
         return {
             "success": False,
             "email": email,
@@ -258,12 +258,12 @@ def run_cloak_registration(
         if traffic_tracker is not None:
             try:
                 traffic_tracker.stop()
-            except Exception:
-                pass
+            except Exception as _ignored_exc:
+                logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
         if data_saver is not None:
             data_saver.stop()
         if driver and not bool(_cfg.CLOAK_KEEP_BROWSER_OPEN):
             try:
                 driver.quit()
-            except Exception:
-                pass
+            except Exception as _ignored_exc:
+                logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
