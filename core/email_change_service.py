@@ -17,6 +17,7 @@ from core.email_provider import (
     release_email_if_unconsumed, wait_for_otp,
 )
 from core.session import BrowserSession
+from core.timeutil import utc_now_iso
 
 logger = logging.getLogger(__name__)
 _EXECUTOR = ThreadPoolExecutor(max_workers=3, thread_name_prefix="email-change")
@@ -380,7 +381,7 @@ def _check_live_in_current_session(
     result = {
         "ok": True,
         "status": "live",
-        "checked_at": datetime.now().isoformat(timespec="seconds"),
+        "checked_at": utc_now_iso(),
         "access_token": access_token,
         "session": session_info,
         "proxy_used": session.proxy or None,

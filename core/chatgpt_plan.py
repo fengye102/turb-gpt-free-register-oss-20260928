@@ -13,6 +13,7 @@ from typing import Any, Optional
 from urllib.parse import quote, urlparse
 
 from core.session import BrowserSession, is_cf_challenge_response
+from core.timeutil import utc_now_iso
 
 logger = logging.getLogger(__name__)
 
@@ -20,7 +21,7 @@ ACCOUNTS_CHECK_PATH = "/backend-api/accounts/check/v4-2023-04-27"
 
 
 def now_iso() -> str:
-    return datetime.now().isoformat(timespec="seconds")
+    return utc_now_iso()
 
 
 def normalize_token(token: str) -> str:

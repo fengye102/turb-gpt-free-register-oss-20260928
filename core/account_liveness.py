@@ -28,6 +28,7 @@ from core.account_export import (
     follow_oauth_callback,
 )
 from core.email_provider import wait_for_otp
+from core.timeutil import utc_now_iso
 
 logger = logging.getLogger(__name__)
 _LOG_DIR = Path(__file__).resolve().parent.parent / "注册日志"
@@ -165,7 +166,7 @@ def _network_preflight_with_retry(
 
 
 def _now() -> str:
-    return datetime.now().isoformat(timespec="seconds")
+    return utc_now_iso()
 
 
 def _safe_fingerprint_for_account(session: BrowserSession) -> dict:

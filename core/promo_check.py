@@ -18,6 +18,7 @@ from core.promo_detector import oaics
 from core.promo_detector.billing import billing_currency
 from core.promo_detector.http import chatgpt_session, make_session, request as _req
 from core.promo_detector.risk import checkout_risk_headers
+from core.timeutil import utc_now_iso
 
 logger = logging.getLogger(__name__)
 os.environ.setdefault("PYTHON_BIN", sys.executable)
@@ -384,7 +385,7 @@ def detect_account_promo(
     会直接把"有优惠"检测成"没有优惠"。
     """
     token = str(access_token or "").strip()
-    checked_at = datetime.now().isoformat(timespec="seconds")
+    checked_at = utc_now_iso()
     if not token:
         return {"ok": False, "error": "缺少 access_token", "checked_at": checked_at}
     try:

@@ -11,6 +11,7 @@ from pathlib import Path
 from core import db
 from core.account_liveness import check_account_liveness, log_path
 from core.chatgpt_plan import resolve_plan_check_route
+from core.timeutil import utc_now_iso
 
 logger = logging.getLogger(__name__)
 
@@ -105,7 +106,7 @@ def _run_live_check(*, account_id: int, email: str, proxy: str | None, trigger: 
         result = {
             "ok": False,
             "status": "failed",
-            "checked_at": datetime.now().isoformat(timespec="seconds"),
+            "checked_at": utc_now_iso(),
             "error": f"{type(exc).__name__}: {str(exc)[:500]}",
         }
         try:
@@ -149,7 +150,7 @@ def enqueue_account_live_check(*, account_id: int, email: str, trigger: str = "m
         result = {
             "ok": False,
             "status": "failed",
-            "checked_at": datetime.now().isoformat(timespec="seconds"),
+            "checked_at": utc_now_iso(),
             "error": f"查活入队失败: {type(exc).__name__}: {str(exc)[:160]}",
         }
         db.update_account_liveness(account_id, result)

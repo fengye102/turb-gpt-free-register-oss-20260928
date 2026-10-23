@@ -13,6 +13,7 @@ from urllib.parse import urlparse
 
 from config import proxy as proxy_cfg
 from core import db
+from core.timeutil import utc_now_iso
 
 logger = logging.getLogger(__name__)
 
@@ -240,7 +241,7 @@ def _run_generate(*, account_id: int, email: str, access_token: str, trigger: st
         result = {
             "ok": True,
             "status": "success",
-            "checked_at": datetime.now().isoformat(timespec="seconds"),
+            "checked_at": utc_now_iso(),
             "message": "Codex Agent Token 已生成" + ("，已同步 sub2api" if sub2api_result else ""),
             "agent_runtime_id": (identity or {}).get("agent_runtime_id"),
             "auth_path": None,
@@ -264,7 +265,7 @@ def _run_generate(*, account_id: int, email: str, access_token: str, trigger: st
         result = {
             "ok": False,
             "status": "failed",
-            "checked_at": datetime.now().isoformat(timespec="seconds"),
+            "checked_at": utc_now_iso(),
             "error": f"{type(exc).__name__}: {str(exc)[:300]}",
             "network_route": route_meta.get("network_route"),
             "proxy_mode": route_meta.get("proxy_mode"),

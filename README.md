@@ -38,15 +38,18 @@ python web.py
 
 ## 自检与测试
 
-改完代码提交前，三件事跑一遍就够了：
+改完代码提交前，四件事跑一遍就够了：
 
 ```powershell
 python tools/check_imports.py         # core/config/webui/tools 里的引用是否都能落地
 python tools/gen_env_example.py       # 重新生成 .env.example（改过配置白名单就要跑）
 python -m pytest -q                   # 单元测试
+python tools/live_probe.py            # 真起一个服务并发压一轮接口（pytest 验不到的线程/鉴权问题）
 ```
 
 `tools/check_imports.py` 值得单独说一句：清理源码分发时最容易犯的错不是忘了删文件，而是删了模块但调用点还在——`core/upi_live_feed.py`、`core/mailcom_client.py`、`tools/export_session_cookies.py` 都这么悬空过，其中第一个直接让 `python web.py` 起不来。这个脚本被 `tests/test_imports.py` 调用，CI 里也会跑。
+
+`tools/live_probe.py` 补的是另一类盲区：pytest 全在单线程的 test_client 里跑，验不出「SQLite 连接按线程复用后会不会串库」「鉴权中间件会不会把页面拦掉」。它起一个真实服务（临时库、指定端口、自带授权码），先确认无码访问 `/api/*` 必 401，再并发压一轮读接口，全绿退 0；全程只碰临时目录，不碰 `turb.sqlite3`。
 
 `.github/workflows/ci.yml` 在 push / PR 时于 Ubuntu 与 Windows 上执行：语法编译、引用完整性、`.env.example` 同步、pytest。
 

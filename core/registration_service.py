@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any
 
 from core import codex_retry_service, db
+from core.timeutil import utc_now_iso
 
 logger = logging.getLogger(__name__)
 
@@ -290,7 +291,7 @@ def _run_one_job(job_id: int, log_file: str) -> None:
         _deactivate_job(job_id)
         return
 
-    db.update_job(job_id, status="running", started_at=datetime.now().isoformat(timespec="seconds"))
+    db.update_job(job_id, status="running", started_at=utc_now_iso())
 
     email: str | None = None
     try:
@@ -320,7 +321,7 @@ def _run_one_job(job_id: int, log_file: str) -> None:
                     status="stopped",
                     network_traffic=(result or {}).get("network_traffic") if isinstance(result, dict) else None,
                     error="用户手动停止",
-                    completed_at=datetime.now().isoformat(timespec="seconds"),
+                    completed_at=utc_now_iso(),
                 )
                 log_logger.warning(f"[Job {job_id}] 已按用户请求停止")
                 return
@@ -331,7 +332,7 @@ def _run_one_job(job_id: int, log_file: str) -> None:
                     email=result.get("email"),
                     account_id=result.get("account_id"),
                     network_traffic=result.get("network_traffic"),
-                    completed_at=datetime.now().isoformat(timespec="seconds"),
+                    completed_at=utc_now_iso(),
                 )
                 log_logger.info(f"[Job {job_id}] 成功: {result.get('email')}")
             else:
@@ -345,7 +346,7 @@ def _run_one_job(job_id: int, log_file: str) -> None:
                     account_id=(result or {}).get("account_id") if isinstance(result, dict) else None,
                     network_traffic=(result or {}).get("network_traffic") if isinstance(result, dict) else None,
                     error=str(err)[:500],
-                    completed_at=datetime.now().isoformat(timespec="seconds"),
+                    completed_at=utc_now_iso(),
                 )
                 email_to_handle = str(result_email or email or "").strip()
                 if _should_disable_failed_registration_email(err):
@@ -360,7 +361,7 @@ def _run_one_job(job_id: int, log_file: str) -> None:
             job_id,
             status="stopped",
             error="用户手动停止",
-            completed_at=datetime.now().isoformat(timespec="seconds"),
+            completed_at=utc_now_iso(),
         )
     except Exception as exc:
         err_text = f"{type(exc).__name__}: {exc}"
@@ -374,7 +375,7 @@ def _run_one_job(job_id: int, log_file: str) -> None:
                 job_id,
                 status="stopped",
                 error="用户手动停止",
-                completed_at=datetime.now().isoformat(timespec="seconds"),
+                completed_at=utc_now_iso(),
             )
             return
         log_logger.exception(f"[Job {job_id}] 异常")
@@ -382,7 +383,7 @@ def _run_one_job(job_id: int, log_file: str) -> None:
             job_id,
             status="failed",
             error=f"{type(exc).__name__}: {exc}"[:500],
-            completed_at=datetime.now().isoformat(timespec="seconds"),
+            completed_at=utc_now_iso(),
         )
     finally:
         _deactivate_job(job_id)
@@ -397,14 +398,14 @@ def _run_codex_retry_job(job_id: int, log_file: str, email: str, account_id: int
         _deactivate_job(job_id)
         return
 
-    db.update_job(job_id, status="running", started_at=datetime.now().isoformat(timespec="seconds"))
+    db.update_job(job_id, status="running", started_at=utc_now_iso())
     try:
         result = codex_retry_service.run_worker(
             email,
             clear_log=False,
             target_log_path=log_file,
         )
-        now_iso = datetime.now().isoformat(timespec="seconds")
+        now_iso = utc_now_iso()
         if is_stop_requested(job_id) or result.get("status") == "stopped":
             db.update_job(job_id, status="stopped", email=email, account_id=account_id, error=str(result.get("message") or "用户手动停止")[:500], completed_at=now_iso)
         elif result.get("ok"):
@@ -429,7 +430,7 @@ def _run_codex_retry_job(job_id: int, log_file: str, email: str, account_id: int
             job_id,
             status="failed",
             error=f"{type(exc).__name__}: {exc}"[:500],
-            completed_at=datetime.now().isoformat(timespec="seconds"),
+            completed_at=utc_now_iso(),
         )
         codex_retry_service.release(email)
         logger.exception("[Job %s] Codex 补跑异常", job_id)
@@ -500,7 +501,7 @@ def submit_registration(
                     int(job["id"]),
                     status="failed",
                     error=f"队列提交失败：{type(exc).__name__}: {exc}"[:500],
-                    completed_at=datetime.now().isoformat(timespec="seconds"),
+                    completed_at=utc_now_iso(),
                 )
                 logger.exception("[Service] 注册任务 #%s 提交线程池失败", job["id"])
             jobs.append(db.get_job(int(job["id"])) or job)
@@ -637,7 +638,7 @@ def retry_job(job_id: int, workers: int | None = None) -> dict:
             int(job["id"]),
             status="failed",
             error=f"队列提交失败：{type(exc).__name__}: {exc}"[:500],
-            completed_at=datetime.now().isoformat(timespec="seconds"),
+            completed_at=utc_now_iso(),
         )
         logger.exception("[Service] 重试任务 #%s 提交线程池失败", job["id"])
         return {"ok": False, "error": "重试任务创建成功，但提交执行失败", "status": 500, "job": db.get_job(int(job["id"]))}
@@ -663,7 +664,7 @@ def cancel_pending_jobs() -> int:
     """
     jobs = db.list_jobs(limit=1000)
     cancelled = 0
-    now_iso = datetime.now().isoformat(timespec="seconds")
+    now_iso = utc_now_iso()
     for job in jobs:
         if job.get("status") == "pending":
             db.update_job(
@@ -683,7 +684,7 @@ def request_stop_job(job_id: int) -> dict:
     if not job:
         return {"ok": False, "error": "任务不存在", "status": 404}
     status = job.get("status")
-    now_iso = datetime.now().isoformat(timespec="seconds")
+    now_iso = utc_now_iso()
     if status == "pending":
         db.update_job(job_id, status="cancelled", completed_at=now_iso, error="用户手动停止/取消排队")
         _append_job_log(job_id, "用户手动停止：任务尚未运行，已取消排队。")

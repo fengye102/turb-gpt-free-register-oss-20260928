@@ -15,6 +15,7 @@ from contextlib import closing, contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterator
+from core.timeutil import seconds_since, utc_now_iso
 
 logger = logging.getLogger(__name__)
 
@@ -72,20 +73,13 @@ _SQLITE_READY_PATH: Path | None = None
 
 
 def _now() -> str:
-    """统一写入带时区的 UTC 秒级时间戳，落库时间不再随服务器本地时区漂移。"""
-    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+    """落库时间戳：带时区的 UTC 秒级 ISO；实现与全仓统一在 core/timeutil.py。"""
+    return utc_now_iso()
 
 
 def _elapsed_seconds(stamp: object) -> float:
-    """返回 stamp 距今的秒数，正数表示已经过去。
-
-    旧库里的时间戳是不带时区的本地时间字符串，按本地时区补全；新写入的是 +00:00 结尾的 UTC。
-    解析失败照旧抛 TypeError/ValueError，由调用方原有的 except 分支兜底，行为与改动前一致。
-    """
-    dt = datetime.fromisoformat(str(stamp or ""))
-    if dt.tzinfo is None:
-        dt = dt.astimezone()
-    return (datetime.now(timezone.utc) - dt.astimezone(timezone.utc)).total_seconds()
+    """返回 stamp 距今的秒数（正数表示已过去）；新旧形状兼容见 core/timeutil.py。"""
+    return seconds_since(stamp)
 
 
 def _ensure_storage() -> None:

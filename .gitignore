@@ -26,3 +26,9 @@ tools/_traffic_meter.json
 用于注册的API邮箱*.json
 注册成功的*
 accounts/
+
+# 临时草稿：改代码时落在仓库根的探针/消息文件，不进版本库
+/_*.py
+/_*.txt
+/_*.js
+/_stub/

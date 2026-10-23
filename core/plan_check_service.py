@@ -13,6 +13,7 @@ from datetime import datetime
 from config import proxy as proxy_cfg
 from core import api_traffic, db
 from core.chatgpt_plan import check_account_plan
+from core.timeutil import utc_now_iso
 
 logger = logging.getLogger(__name__)
 
@@ -192,7 +193,7 @@ def _run_plan_check(
     except Exception as exc:
         result = {
             "ok": False,
-            "checked_at": datetime.now().isoformat(timespec="seconds"),
+            "checked_at": utc_now_iso(),
             "error": f"{type(exc).__name__}: {str(exc)[:180]}",
         }
         try:
@@ -241,7 +242,7 @@ def enqueue_account_plan_check(
         _QUEUE_SLOTS.release()
         result = {
             "ok": False,
-            "checked_at": datetime.now().isoformat(timespec="seconds"),
+            "checked_at": utc_now_iso(),
             "error": f"套餐查询入队失败: {type(exc).__name__}: {str(exc)[:160]}",
         }
         db.update_account_plan_check(acc_id=account_id, result=result)
