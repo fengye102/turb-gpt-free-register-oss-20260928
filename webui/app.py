@@ -30,6 +30,10 @@ from webui.views.upi import UPI_ZERO_AVAILABLE as _UPI_ZERO_AVAILABLE
 
 logger = logging.getLogger(__name__)
 
+# legacy 界面（index_legacy.html）已冻结：只修安全问题、不再加功能。
+# 提醒只在首次访问时打一次，避免刷日志。
+_LEGACY_UI_WARNED = False
+
 # 「零元提链」是可选组件：缺件时 webui/views/upi.py 返回 503，不影响启动。
 # 这里 re-export 一个标记，保持对老代码/冒烟用例的兼容。
 # 生成好的下载包由 api_utils.prepared_downloads 统一保管（过期与上限也在那边）。
@@ -172,6 +176,7 @@ def create_app(auth_code: str | None = None) -> Flask:
     # ----------------------------------------------------------
     @app.get("/")
     def index():
+        global _LEGACY_UI_WARNED
         requested_ui = (request.args.get("ui") or "").strip().lower()
         if requested_ui in {"legacy", "modern"}:
             ui_mode = requested_ui
@@ -181,6 +186,12 @@ def create_app(auth_code: str | None = None) -> Flask:
                 ui_mode = "modern"
 
         template_name = "index_legacy.html" if ui_mode == "legacy" else "index.html"
+        if ui_mode == "legacy" and not _LEGACY_UI_WARNED:
+            _LEGACY_UI_WARNED = True
+            logger.warning(
+                "你正在用 legacy 界面（index_legacy.html）：它已冻结，只修安全问题、不再加功能；"
+                "新功能只在 index.html。加 ?ui=modern 可切回现代界面。"
+            )
         resp = make_response(render_template(template_name))
         resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
         resp.headers["Pragma"] = "no-cache"

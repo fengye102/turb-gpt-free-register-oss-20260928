@@ -93,3 +93,21 @@ python tools/live_probe.py            # 真起一个服务并发压一轮接口�
 主项目基于 [xiaoguzuiniu/gpt-free-register](https://github.com/xiaoguzuiniu/gpt-free-register) 改造，按 MIT License 发布，见 [LICENSE](LICENSE)。`vendor/gpt-register-tool/协议` 里的组件保留各自上游的许可证和版权说明，使用前也记得看一眼。
 
 请只在自己有权使用的环境里运行，并遵守相关服务、邮箱和代理提供方的规则。这个项目负责把流程接起来，不会附送账号、邮箱、代理，也不会替第三方服务承诺可用性。
+
+## 两套 UI 的关系与处置
+
+仓库里有两个单文件模板：`webui/templates/index.html`（维护中）和 `index_legacy.html`（旧版，3633 行）。
+`GET /?ui=legacy` 或 cookie `ui_mode=legacy` 会切到旧版；默认永远是现代版。
+
+**现状：旧版已冻结。** 只跟着修安全问题（例如「凭证不再随列表下发」那轮，旧版的 Token 列
+改成「已生成 / 未生成」、复制按钮改为按需取），不再补新功能。理由很直白：
+两个模板各写一遍功能，成本翻倍而且迟早不一致 —— 上一轮改池子脱敏时，两套 UI 都得动。
+
+要彻底删掉旧版，三步：
+
+1. 删 `webui/templates/index_legacy.html`；
+2. 删 `webui/app.py` 里 `index()` 的 `ui_mode` 分支：`template_name` 直接写 `"index.html"`，
+   并去掉 `resp.set_cookie("ui_mode", ...)` 那段；
+3. 删 `webui/app.py` 里的 `_LEGACY_UI_WARNED` 与那条 warning 日志。
+
+留着的唯一理由：删之前得先确认没人还在用 `?ui=legacy`。
