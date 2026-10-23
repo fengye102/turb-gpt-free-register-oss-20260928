@@ -50,13 +50,23 @@ python -m pytest -q                   # 单元测试
 
 `.github/workflows/ci.yml` 在 push / PR 时于 Ubuntu 与 Windows 上执行：语法编译、引用完整性、`.env.example` 同步、pytest。
 
+### 继续拆 `app.py` 的规矩
+
+`webui/app.py` 里仍然挤着一百多个 `create_app()` 内的闭包，正在按域往外搬（已经搬完 `pools`）。做法固定，照 `webui/views/pools.py` 抄：
+
+1. 挑一个域（例如 `jobs`、`codex`、`config`），确认它的路由不依赖其它闭包；
+2. 整块搬进 `webui/views/<域>.py`，`@app.get` 改成 `@bp.get`，`app.py` 里 `app.register_blueprint(bp)`；
+3. 在 `tests/` 补一组「搬家不改行为」的用例：路径、参数默认值、状态码、鉴权、批量上限都要落一条；
+4. `python -m pytest -q` 与随手的探针脚本各跑一遍 —— 搬迁最容易漏掉的是模块级依赖，
+   例如 import 块换掉时丢了一个名字，只有在真起一次应用时才会炸。
+
 ### 目录约定
 
 | 目录 | 放什么 |
 |---|---|
 | `core/` | 业务实现：SQLite 持久化、注册/授权驱动、邮箱与短信渠道、流量统计 |
 | `config/` | 默认值与 `.env` 覆盖（`config.env_loader`）；WebUI 只写 `.env` |
-| `webui/` | Flask 控制台：`app.py` 路由 + `config_editor.py` 配置读写 + `auth.py` 授权 |
+| `webui/` | Flask 控制台：`app.py`（装配 + 页面路由）+ `views/`（各域 Blueprint，如 `pools.py`）+ `api_utils.py`（列表/分页/下载缓存等无状态工具）+ `config_editor.py` `auth.py` |
 | `tools/` | 独立脚本：代理桥、cookie 落盘、环境守卫（`check_imports.py`）等 |
 | `sentinel/` | Node 侧 Sentinel 运行时（`sentinel-runner.js` + 环境画像数据） |
 | `tests/` | pytest 用例；`conftest.py` 会把 SQLite 指到临时目录，不碰真实库 |
