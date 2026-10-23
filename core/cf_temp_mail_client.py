@@ -25,6 +25,7 @@ import requests
 
 from config import email as _email_cfg
 from core.otp_utils import extract_otp, looks_like_openai_email
+from core import waits
 
 logger = logging.getLogger(__name__)
 
@@ -599,7 +600,7 @@ def fetch_latest_otp(
         except CFTempMailError as exc:
             last_error = str(exc)
             logger.warning("[Cloudflare] 拉取邮件失败: %s", exc)
-            time.sleep(interval)
+            waits.sleep(waits.poll_delay(interval, deadline - time.monotonic()))
             continue
 
         if messages:
@@ -692,7 +693,7 @@ def fetch_latest_otp(
             )
         if remaining <= 0:
             break
-        time.sleep(min(interval, max(1, remaining)))
+        waits.sleep(waits.poll_delay(interval, remaining, floor=1))
 
     if best_otp:
         logger.warning("[Cloudflare] 总超时但已有候选，返回 OTP=%s", best_otp)

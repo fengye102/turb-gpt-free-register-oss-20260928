@@ -27,6 +27,7 @@ import requests
 
 from config import email as _email_cfg
 from core.otp_utils import extract_otp, looks_like_openai_email
+from core import waits
 
 logger = logging.getLogger(__name__)
 
@@ -185,7 +186,7 @@ def pick_account() -> TempMailIoAccount:
         except Exception as exc:
             last_exc = exc
             logger.warning("[TempMailIo] 创建失败（第 %s/3 次）：%s", attempt, str(exc)[:160])
-            time.sleep(1.5 * attempt)
+            waits.sleep(waits.backoff_delay(attempt))
     raise TempMailIoError(f"temp-mail.io 创建邮箱失败: {last_exc}")
 
 
@@ -290,7 +291,7 @@ def fetch_latest_otp(
             messages = _fetch_raw(session, account)
         except requests.RequestException as exc:
             logger.warning("[TempMailIo] 拉取收件箱失败：%s", str(exc)[:140])
-            time.sleep(interval)
+            waits.sleep(waits.poll_delay(interval, deadline - time.time()))
             continue
 
         for raw in messages:
@@ -319,10 +320,10 @@ def fetch_latest_otp(
         remaining = int(deadline - now)
         if best is not None:
             logger.info("[TempMailIo] 已锁定 OTP=%s，等 settle（剩余 %ss）", best[1], remaining)
-            time.sleep(max(0.5, min(1.5, remaining)))
+            waits.sleep(waits.poll_delay(1.5, deadline - time.time(), floor=0.5))
         else:
             logger.info("[TempMailIo] 暂未收到 OpenAI 邮件，%ss 后重试（剩余 %ss）", interval, remaining)
-            time.sleep(interval)
+            waits.sleep(waits.poll_delay(interval, deadline - time.time()))
 
     if best is not None:
         return best[1]

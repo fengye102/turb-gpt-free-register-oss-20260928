@@ -23,6 +23,7 @@ from core.account_export import (
 )
 from core.name_samples import random_display_name
 from core.profile_utils import generate_random_birthday
+from core import waits
 
 # 配置日志
 logging.basicConfig(
@@ -513,7 +514,7 @@ def run_serial_batch(count: int, delay: float, continue_on_fail: bool, batch_dir
 
         if delay > 0 and index < count - 1:
             logger.info(f"[批量] 等待 {delay} 秒后继续")
-            time.sleep(delay)
+            waits.sleep(delay)
     return results
 
 
@@ -542,7 +543,7 @@ def run_parallel_batch(
         future_to_index[future] = next_index
         next_index += 1
         if delay > 0 and next_index < count:
-            time.sleep(delay)
+            waits.sleep(delay)
         return True
 
     with ThreadPoolExecutor(max_workers=workers, thread_name_prefix="reg-cli") as executor:

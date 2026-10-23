@@ -28,6 +28,7 @@ from curl_cffi.requests import Session as CurlSession
 # 这样 WebUI 调 config.reload_all() 后，本模块通过 codex.X 读到的是最新值。
 from config import codex as _cfg
 from config import IMPERSONATE
+from core import waits
 
 logger = logging.getLogger(__name__)
 
@@ -462,7 +463,7 @@ def wait_for_sms_code(
                     f"[SMS:L] 第 {round_no} 轮未收到验证码，状态={status or raw or 'WAIT'}，"
                     f"{interval}s 后重试（剩余 {remaining}s）"
                 )
-                time.sleep(interval)
+                waits.sleep(waits.poll_delay(interval, remaining))
                 continue
 
             if provider == "h":
@@ -478,7 +479,7 @@ def wait_for_sms_code(
                     f"[SMS:H] 第 {round_no} 轮未收到验证码，状态={status or raw or 'WAIT'}，"
                     f"{interval}s 后重试（剩余 {remaining}s）"
                 )
-                time.sleep(interval)
+                waits.sleep(waits.poll_delay(interval, remaining))
                 continue
 
             text = _request_grizzly(http, {"action": "getStatus", "id": activation_id})
@@ -492,7 +493,7 @@ def wait_for_sms_code(
             # STATUS_WAIT_CODE / STATUS_WAIT_RETRY:* / STATUS_WAIT_RESEND → 继续等
             remaining = max(0, int(deadline - time.time()))
             logger.info(f"[SMS] 第 {round_no} 轮未收到验证码，状态={text}，{interval}s 后重试（剩余 {remaining}s）")
-            time.sleep(interval)
+            waits.sleep(waits.poll_delay(interval, remaining))
 
         raise SmsCodeTimeout(f"等待短信超时（>{total_wait}s），activation_id={activation_id}")
     finally:
@@ -554,7 +555,7 @@ def _do_cancel_sync(activation_id: str, http_factory) -> None:
                 f"[SMS] 取消等待 GrizzlySMS 2 分钟限制：activation_id={activation_id}，"
                 f"还需等 {wait:.0f}s..."
             )
-            time.sleep(wait)
+            waits.sleep(wait)
 
     # 后台线程不能复用外部 http session（curl_cffi 非线程安全），自己建一个
     http = http_factory()
@@ -568,7 +569,7 @@ def _do_cancel_sync(activation_id: str, http_factory) -> None:
             except Exception as exc:
                 if attempt == 1:
                     logger.warning(f"[SMS] 取消失败（{exc}），5s 后重试...")
-                    time.sleep(5)
+                    waits.sleep(5)
                 else:
                     logger.warning(
                         f"[SMS] 取消最终失败（不影响结果，需到平台手动取消）：activation_id={activation_id}, {exc}"

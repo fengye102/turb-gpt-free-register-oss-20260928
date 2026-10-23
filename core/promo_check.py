@@ -19,6 +19,7 @@ from core.promo_detector.billing import billing_currency
 from core.promo_detector.http import chatgpt_session, make_session, request as _req
 from core.promo_detector.risk import checkout_risk_headers
 from core.timeutil import utc_now_iso
+from core import waits
 
 logger = logging.getLogger(__name__)
 os.environ.setdefault("PYTHON_BIN", sys.executable)
@@ -435,7 +436,7 @@ def detect_account_promo(
             if _promo_is_cf_challenge(item) and cf_rotations < _PROMO_CF_ROTATIONS:
                 cf_rotations += 1
                 attempt -= 1
-                time.sleep(_PROMO_CF_ROTATE_SLEEP)
+                waits.sleep(_PROMO_CF_ROTATE_SLEEP, jitter=0.25)
                 logger.info(
                     "[Promo] %s 出口被 Cloudflare 挑战，换上游重试 (%s/%s)",
                     cc, cf_rotations, _PROMO_CF_ROTATIONS,
@@ -453,7 +454,7 @@ def detect_account_promo(
             #   原地重试 = 拿同一条脏出口再问一遍，只会拿到同样的 no。
             rotations += 1
             logger.debug("[Promo] %s 第 %s 次未出优惠，换出口重试", cc, attempt)
-            time.sleep(_PROMO_CF_ROTATE_SLEEP)
+            waits.sleep(_PROMO_CF_ROTATE_SLEEP, jitter=0.25)
         if isinstance(item, dict):
             item["attempts"] = attempt
         results.append(item)

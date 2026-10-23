@@ -18,6 +18,7 @@ from typing import Any
 
 from core import codex_retry_service, db
 from core.timeutil import utc_now_iso
+from core import waits
 
 logger = logging.getLogger(__name__)
 
@@ -37,18 +38,23 @@ _STOP_LOCK = threading.Lock()
 _THREAD_CTX = threading.local()
 
 
-class StopRequested(RuntimeError):
-    """用户手动停止注册任务。"""
+# 停止信号与「可中断等待」共用同一个异常类型：waits.sleep 被打断时抛的就是它，
+# 所以下面已有的 except StopRequested 分支不用为可打断睡眠再改一遍。
+StopRequested = waits.StopRequested
 
 
 def _activate_job(job_id: int) -> None:
     _THREAD_CTX.job_id = int(job_id)
     with _STOP_LOCK:
-        _STOP_EVENTS.setdefault(int(job_id), threading.Event())
+        event = _STOP_EVENTS.setdefault(int(job_id), threading.Event())
         _ACTIVE_JOBS.add(int(job_id))
+    # 绑给本线程：注册链路里的 waits.sleep 从此能被停止按钮立刻打断，
+    # 不用等 OTP 轮询（默认 180s）或退避整段睡完。
+    waits.bind_stop_event(event)
 
 
 def _deactivate_job(job_id: int) -> None:
+    waits.clear_stop_event()
     with _STOP_LOCK:
         _STOP_EVENTS.pop(int(job_id), None)
         _ACTIVE_JOBS.discard(int(job_id))

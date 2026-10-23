@@ -14,6 +14,7 @@ from urllib.parse import quote, urlparse
 
 from core.session import BrowserSession, is_cf_challenge_response
 from core.timeutil import utc_now_iso
+from core import waits
 
 logger = logging.getLogger(__name__)
 
@@ -457,7 +458,7 @@ def check_account_plan(
             if http_status == 403 and ip_rotations < _PLAN_CF_ROTATIONS and is_cf_challenge_response(resp):
                 ip_rotations += 1
                 attempt -= 1  # 换 IP 重试不占业务重试预算
-                time.sleep(_PLAN_CF_ROTATE_SLEEP)
+                waits.sleep(_PLAN_CF_ROTATE_SLEEP, jitter=0.25)
                 logger.info(
                     "[Plan] 套餐查询出口被 Cloudflare 挑战，换上游重试 (%s/%s)",
                     ip_rotations,
@@ -512,7 +513,7 @@ def check_account_plan(
                             "[Plan] %s 这条出口查不到 Plus 试用资格，换出口重查 (%s/%s)",
                             claims.get("email") or "?", elig_rotations, _PLAN_ELIG_ROTATIONS,
                         )
-                        time.sleep(_PLAN_CF_ROTATE_SLEEP)
+                        waits.sleep(_PLAN_CF_ROTATE_SLEEP, jitter=0.25)
                         continue
                     return parsed
         except Exception as exc:
@@ -573,7 +574,7 @@ def check_account_plan(
             last_result.get("error"),
         )
         if wait_seconds > 0:
-            time.sleep(wait_seconds)
+            waits.sleep(wait_seconds)
 
     return last_result or {
         "ok": False,

@@ -14,6 +14,7 @@ from urllib.parse import urlparse
 from config import proxy as proxy_cfg
 from core import db
 from core.timeutil import utc_now_iso
+from core import waits
 
 logger = logging.getLogger(__name__)
 
@@ -101,7 +102,7 @@ def _wait_for_rate_slot() -> None:
         _NEXT_REQUEST_AT = scheduled + min_interval
     wait_seconds = scheduled - now
     if wait_seconds > 0:
-        time.sleep(wait_seconds)
+        waits.sleep(wait_seconds)
 
 
 def _safe_email_filename(email: str) -> str:
@@ -171,7 +172,7 @@ def _run_generate(*, account_id: int, email: str, access_token: str, trigger: st
                     str(exc)[:180],
                 )
                 if wait_seconds > 0:
-                    time.sleep(wait_seconds)
+                    waits.sleep(wait_seconds)
         if not isinstance(auth_json, dict):
             raise RuntimeError(f"Codex Agent 生成未返回 auth_json: {last_exc}")
         identity = auth_json.get("agent_identity") if isinstance(auth_json, dict) else {}

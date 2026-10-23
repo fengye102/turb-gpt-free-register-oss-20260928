@@ -29,6 +29,7 @@ from core.account_export import (
 )
 from core.email_provider import wait_for_otp
 from core.timeutil import utc_now_iso
+from core import waits
 
 logger = logging.getLogger(__name__)
 _LOG_DIR = Path(__file__).resolve().parent.parent / "注册日志"
@@ -161,7 +162,7 @@ def _network_preflight_with_retry(
                 "[查活] 网络预检失败（%s/%s），重新建立会话重试：%s",
                 attempt, max_attempts, str(exc)[:200],
             )
-            time.sleep(2)
+            waits.sleep(waits.backoff_delay(attempt, base=2))
     raise RuntimeError(f"网络预检多次失败：{last_exc}")
 
 
@@ -430,7 +431,7 @@ def _validate_reauth_with_retry(
             send_email_otp(session)
             otp_after_ts = time.time()
             current_otp = None
-            time.sleep(1)
+            waits.sleep(waits.OTP_RESEND_SETTLE)
     raise last_exc if last_exc else RuntimeError("重认证 OTP 验证失败")
 
 
@@ -655,7 +656,7 @@ def _validate_with_retry(
             # 以“重新发送请求完成后”为新基准，避免刚刚失败的上一封旧码再次被 after 容忍窗口命中。
             otp_after_ts = time.time()
             current_otp = None
-            time.sleep(1)
+            waits.sleep(waits.OTP_RESEND_SETTLE)
         except Exception as exc:
             # 提交 OTP 后的网络抖动（连接断开/超时/代理波动）：同一会话重发验证码再验证一次。
             if attempt >= max_otp_attempts or not _is_retryable_network_error(exc):
@@ -668,7 +669,7 @@ def _validate_with_retry(
                 raise
             otp_after_ts = time.time()
             current_otp = None
-            time.sleep(1)
+            waits.sleep(waits.OTP_RESEND_SETTLE)
     raise last_exc if last_exc else RuntimeError("OTP 验证失败")
 
 

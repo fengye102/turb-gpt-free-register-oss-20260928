@@ -28,6 +28,7 @@ import requests
 
 from config import email as _email_cfg
 from core.otp_utils import extract_otp
+from core import waits
 
 logger = logging.getLogger(__name__)
 
@@ -622,7 +623,7 @@ def _wait_for_order_credentials(order: dict) -> tuple[str, str, str]:
         remaining = deadline - time.monotonic()
         if remaining <= 0:
             break
-        time.sleep(min(1, remaining))
+        waits.sleep(waits.poll_delay(1, remaining))
 
     status = str(latest.get("status") or "unknown")
     raise RemailError(f"Remail 订单等待 service token 超时: order={order_no}, status={status}")
@@ -760,7 +761,7 @@ def pick_account() -> RemailAccount:
                     "[Remail] 下单失败（%s/%s），%ss 后重试: %s",
                     attempt, _ORDER_CREATE_ATTEMPTS, backoff, str(exc)[:160],
                 )
-            time.sleep(backoff)
+            waits.sleep(backoff)
     if order is None:
         raise last_exc or RemailError("Remail 下单失败")
     email, service_token, order_no = _wait_for_order_credentials(order)
@@ -952,7 +953,7 @@ def fetch_latest_otp(
         remaining = deadline - time.monotonic()
         if remaining <= 0:
             break
-        time.sleep(min(interval, remaining))
+        waits.sleep(waits.poll_delay(interval, remaining))
 
     if best_otp:
         return best_otp

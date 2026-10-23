@@ -14,6 +14,7 @@ from config import proxy as proxy_cfg
 from core import api_traffic, db
 from core.chatgpt_plan import check_account_plan
 from core.timeutil import utc_now_iso
+from core import waits
 
 logger = logging.getLogger(__name__)
 
@@ -90,7 +91,7 @@ def _wait_for_rate_slot() -> None:
         _NEXT_REQUEST_AT = scheduled + min_interval
     wait_seconds = scheduled - now
     if wait_seconds > 0:
-        time.sleep(wait_seconds)
+        waits.sleep(wait_seconds)
 
 
 def _registration_recheck_delay() -> float:
@@ -130,7 +131,7 @@ def _run_plan_check(
         )
         if should_recheck:
             logger.info("[Plan] 新账号暂未发现 Plus 试用资格，%.1fs 后复查一次: %s", recheck_delay, email)
-            time.sleep(recheck_delay)
+            waits.sleep(recheck_delay)
             _wait_for_rate_slot()
             recheck_result = check_account_plan(
                 access_token,

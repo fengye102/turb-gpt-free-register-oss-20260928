@@ -18,6 +18,7 @@ from core.email_provider import (
 )
 from core.session import BrowserSession
 from core.timeutil import utc_now_iso
+from core import waits
 
 logger = logging.getLogger(__name__)
 _EXECUTOR = ThreadPoolExecutor(max_workers=3, thread_name_prefix="email-change")
@@ -143,7 +144,7 @@ def _post_with_network_retry(
                 f"{delay}s 后切换到{next_route}重试",
             )
             logger.warning("[邮箱换绑] %s attempt=%s failed: %s", path, attempt, text[:300])
-            time.sleep(delay)
+            waits.sleep(delay)
             # 第二次从代理池重新选择出口；第三次明确直连，避免坏代理持续 reset。
             current = _new_session(
                 account_id, None if attempt == 1 else "", email=fingerprint_email,
