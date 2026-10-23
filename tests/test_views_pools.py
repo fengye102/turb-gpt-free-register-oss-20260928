@@ -128,3 +128,10 @@ def test_invalid_email_source_is_rejected(client):
     resp = client.post("/api/outlook/delete", headers=AUTH, json={"email": "a@x.com", "source": "不存在的来源"})
     assert resp.status_code == 400
     assert resp.get_json()["error"] == "邮箱来源非法"
+
+
+def test_pool_list_has_no_token_preview(client):
+    """邮箱池列表同样不下发 Token 片段。"""
+    rows = client.get("/api/outlook?source=outlook", headers=AUTH).get_json()
+    for item in rows or []:
+        assert "access_token_preview" not in item

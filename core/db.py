@@ -884,11 +884,8 @@ def _decorate_outlook(row: dict, account_by_email: dict[str, dict] | None = None
     if account:
         out["registered_account_id"] = account.get("id")
         out["access_token"] = account.get("access_token")
-        out["access_token_preview"] = (
-            (account.get("access_token") or "")[:40] + "..."
-            if account.get("access_token")
-            else ""
-        )
+        # 这里曾经还下发 access_token 前 40 字符的「预览」：全仓没有任何消费方，
+        # 但它是可外泄的凭证片段，且与账号列表「不下发 Token 预览」的口径自相矛盾，已删。
         out["account_copy_line"] = _account_line(account)
         out["totp_secret"] = account.get("totp_secret")
     return out
@@ -906,11 +903,8 @@ def _decorate_generic_api_email(row: dict, account_by_email: dict[str, dict] | N
     if account:
         out["registered_account_id"] = account.get("id")
         out["access_token"] = account.get("access_token")
-        out["access_token_preview"] = (
-            (account.get("access_token") or "")[:40] + "..."
-            if account.get("access_token")
-            else ""
-        )
+        # 这里曾经还下发 access_token 前 40 字符的「预览」：全仓没有任何消费方，
+        # 但它是可外泄的凭证片段，且与账号列表「不下发 Token 预览」的口径自相矛盾，已删。
         out["account_copy_line"] = _account_line(account)
         out["totp_secret"] = account.get("totp_secret")
     return out
@@ -923,7 +917,7 @@ def _decorate_imap_email(row: dict, account_by_email: dict[str, dict] | None = N
     if account:
         out["registered_account_id"] = account.get("id")
         out["access_token"] = account.get("access_token")
-        out["access_token_preview"] = ((account.get("access_token") or "")[:40] + "...") if account.get("access_token") else ""
+        # 同上：token 预览无人消费，已删。
         out["account_copy_line"] = _account_line(account)
         out["totp_secret"] = account.get("totp_secret")
     return out
@@ -2943,7 +2937,6 @@ def _codex_content_to_record(content: dict) -> dict:
         "filename": fname, "path": f"sqlite://codex_accounts/{fname}", "email": email, "plan": plan,
         "account_id": content.get("account_id", ""), "type": content.get("type", "codex"),
         "last_refresh": content.get("last_refresh", ""), "expired": content.get("expired", ""),
-        "access_token_preview": (content.get("access_token", "") or "")[:32],
         "size": content.get("_size", 0), "mtime": content.get("_mtime", ""),
         "exported_at": content.get("_exported_at"), "exported_count": content.get("_exported_count", 0),
         "archived": bool(content.get("_archived")), "archived_at": content.get("_archived_at"),

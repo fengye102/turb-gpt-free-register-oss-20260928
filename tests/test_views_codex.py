@@ -96,3 +96,11 @@ def test_codex_retry_requires_email(client):
     resp = client.post("/api/codex/retry", headers=AUTH, json={})
     assert resp.status_code == 400
     assert resp.get_json()["error"] == "email 为空"
+
+
+def test_codex_list_has_no_token_preview(client):
+    """列表不下发任何 Token 片段（曾经有 access_token_preview，全仓无人消费）。"""
+    payload = client.get("/api/codex", headers=AUTH).get_json()
+    for item in payload.get("accounts") or []:
+        assert "access_token_preview" not in item
+        assert "access_token" not in item

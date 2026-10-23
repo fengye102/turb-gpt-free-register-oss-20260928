@@ -184,3 +184,18 @@ def test_plan_check_status_shape(client):
     body = client.get("/api/accounts/plan-check-status", headers=AUTH).get_json()
     assert body["items"] == []
     assert "queue" in body
+
+
+def test_accounts_legacy_list_is_compact_too(client, account_id):
+    """非分页分支也必须脱敏：它曾经是列表里唯一能捞到明文凭证的口子。"""
+    rows = client.get("/api/accounts", headers=AUTH).get_json()
+    assert len(rows) == 1
+    row = rows[0]
+    assert row["email"] == "probe@example.com"
+    for secret in ("access_token", "totp_secret", "codex_agent_token", "extra_json", "promo_check_json"):
+        assert secret not in row, f"非分页列表不该下发 {secret}"
+    assert row["has_access_token"] is True
+    assert row["totp_enabled"] is True
+    # 明文仍然可以按行取，只是不再随列表批量下发
+    secret = client.get(f"/api/accounts/{account_id}/secret?field=access_token", headers=AUTH)
+    assert secret.get_json()["value"] == "tok-123"

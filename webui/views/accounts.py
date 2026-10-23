@@ -57,7 +57,14 @@ def api_accounts():
         result["items"] = [compact_account_for_list(r) for r in (result.get("items") or [])]
         result.update({"ok": True, "page": page, "page_size": page_size, "compact": True})
         return jsonify(result)
-    return jsonify(db.list_accounts(limit=limit, archived=archived, plan_filter=plan_filter, codex_filter=codex_filter, q=q, date_from=date_from, date_to=date_to, totp_filter=totp_filter))
+    # 兼容分支：外部脚本/旧调用方还在用不带 page 的形态，接口保留，
+    # 但和分页分支走**同一套 compact**。这里原来直接把整行吐出去，含
+    # access_token / totp_secret / codex_agent_token 明文；而 WebUI 自己只用
+    # paged 分支，于是它成了列表里唯一能捞到凭证的口子。
+    # 需要明文请按行取：GET /api/accounts/<id>/secret?field=access_token
+    # 或 POST /api/accounts/secret-bulk。
+    rows = db.list_accounts(limit=limit, archived=archived, plan_filter=plan_filter, codex_filter=codex_filter, q=q, date_from=date_from, date_to=date_to, totp_filter=totp_filter)
+    return jsonify([compact_account_for_list(row) for row in (rows or [])])
 
 
 @bp.get("/api/accounts/plan-check-status")
