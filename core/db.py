@@ -976,7 +976,7 @@ def list_email_pool_page(
         params.extend([like, like, like])
     clause = " AND ".join(where)
     order_by = "ep.created_at DESC, ep.id DESC" if source == "all" else "ep.id DESC"
-    with _LOCK, _conn_scope() as conn:
+    with _conn_scope() as conn:
         total = int(conn.execute(f"SELECT COUNT(*) FROM email_pool AS ep WHERE {clause}", params).fetchone()[0])
         latest = str(conn.execute(
             f"SELECT COALESCE(MAX(ep.updated_at), '') FROM email_pool AS ep WHERE {clause}",
@@ -1763,82 +1763,81 @@ def list_account_plan_check_statuses(
         "original_email", "email_source", "email_change_status", "email_change_ok",
         "email_change_error", "email_change_new_email", "email_change_started_at", "email_change_completed_at",
     )
-    with _LOCK:
-        limit = max(1, int(limit))
-        offset = max(0, int(offset or 0))
-        extra_where, extra_params = _account_filter_sql(
-            plan_filter=plan_filter,
-            codex_filter=codex_filter,
-            totp_filter=totp_filter,
-        )
-        candidates, total, latest = _query_collection_page(
-            "accounts",
-            archived=archived,
-            q=q,
-            date_from=date_from,
-            date_to=date_to,
-            extra_where=extra_where,
-            extra_params=extra_params,
-            limit=limit,
-            offset=offset,
-        )
-        rows = [_decorate_account(row) for row in candidates]
-        items = []
-        for row in rows:
-            item = {"id": row.get("id"), "email": row.get("email")}
-            for key in fields:
-                value = row.get(key)
-                if key in ("id", "email"):
-                    continue
-                if value is not None and value != "":
-                    item[key] = value
-            item["totp_enabled"] = bool(str(row.get("totp_secret") or "").strip())
-            plan = str(row.get("current_plan_type") or row.get("plan_type") or "").lower()
-            if not any(x in plan for x in ("plus", "pro", "team", "go")):
-                for expire_key in ("expires_at", "plan_expires_at", "plan_renews_at", "renews_at"):
-                    item.pop(expire_key, None)
-            item["codex_agent_has_token"] = bool(str(row.get("codex_agent_token") or "").strip())
-            item["has_access_token"] = bool(str(row.get("access_token") or "").strip())
-            items.append(item)
-        # updated_at 目前只有秒级精度；一次快速查询可能在同一秒内完成
-        # queued -> running -> success/failed，导致 revision 不变，前端跳过合并状态，
-        # 页面就会一直停在“查询中”。把轻量状态本身纳入签名，保证状态变化可被轮询发现。
-        revision_payload = json.dumps(
-            [
-                {
-                    "id": row.get("id"),
-                    "updated_at": row.get("updated_at"),
-                    "plan_check_status": row.get("plan_check_status"),
-                    "plan_check_ok": row.get("plan_check_ok"),
-                    "plan_check_error": row.get("plan_check_error"),
-                    "current_plan_type": row.get("current_plan_type"),
-                    "plan_type": row.get("plan_type"),
-                    "plus_trial_eligible": row.get("plus_trial_eligible"),
-                    "extract_link_status": row.get("extract_link_status"),
-                    "codex_status": row.get("codex_status"),
-                    "codex_agent_status": row.get("codex_agent_status"),
-                    "totp_setup_status": row.get("totp_setup_status"),
-                    "totp_setup_ok": row.get("totp_setup_ok"),
-                    "totp_setup_error": row.get("totp_setup_error"),
-                    "totp_setup_message": row.get("totp_setup_message"),
-                    "totp_setup_checked_at": row.get("totp_setup_checked_at"),
-                    "totp_setup_started_at": row.get("totp_setup_started_at"),
-                    "totp_setup_completed_at": row.get("totp_setup_completed_at"),
-                    "totp_enabled": bool(str(row.get("totp_secret") or "").strip()),
-                    "email": row.get("email"),
-                    "original_email": row.get("original_email"),
-                    "email_source": row.get("email_source"),
-                    "email_change_status": row.get("email_change_status"),
-                    "email_change_error": row.get("email_change_error"),
-                }
-                for row in rows
-            ],
-            ensure_ascii=False,
-            sort_keys=True,
-            separators=(",", ":"),
-        )
-        revision_sig = hashlib.sha1(revision_payload.encode("utf-8")).hexdigest()[:12]
-        return {"items": items, "total": total, "offset": offset, "limit": limit, "revision": f"{total}:{latest}:{revision_sig}"}
+    limit = max(1, int(limit))
+    offset = max(0, int(offset or 0))
+    extra_where, extra_params = _account_filter_sql(
+        plan_filter=plan_filter,
+        codex_filter=codex_filter,
+        totp_filter=totp_filter,
+    )
+    candidates, total, latest = _query_collection_page(
+        "accounts",
+        archived=archived,
+        q=q,
+        date_from=date_from,
+        date_to=date_to,
+        extra_where=extra_where,
+        extra_params=extra_params,
+        limit=limit,
+        offset=offset,
+    )
+    rows = [_decorate_account(row) for row in candidates]
+    items = []
+    for row in rows:
+        item = {"id": row.get("id"), "email": row.get("email")}
+        for key in fields:
+            value = row.get(key)
+            if key in ("id", "email"):
+                continue
+            if value is not None and value != "":
+                item[key] = value
+        item["totp_enabled"] = bool(str(row.get("totp_secret") or "").strip())
+        plan = str(row.get("current_plan_type") or row.get("plan_type") or "").lower()
+        if not any(x in plan for x in ("plus", "pro", "team", "go")):
+            for expire_key in ("expires_at", "plan_expires_at", "plan_renews_at", "renews_at"):
+                item.pop(expire_key, None)
+        item["codex_agent_has_token"] = bool(str(row.get("codex_agent_token") or "").strip())
+        item["has_access_token"] = bool(str(row.get("access_token") or "").strip())
+        items.append(item)
+    # updated_at 目前只有秒级精度；一次快速查询可能在同一秒内完成
+    # queued -> running -> success/failed，导致 revision 不变，前端跳过合并状态，
+    # 页面就会一直停在“查询中”。把轻量状态本身纳入签名，保证状态变化可被轮询发现。
+    revision_payload = json.dumps(
+        [
+            {
+                "id": row.get("id"),
+                "updated_at": row.get("updated_at"),
+                "plan_check_status": row.get("plan_check_status"),
+                "plan_check_ok": row.get("plan_check_ok"),
+                "plan_check_error": row.get("plan_check_error"),
+                "current_plan_type": row.get("current_plan_type"),
+                "plan_type": row.get("plan_type"),
+                "plus_trial_eligible": row.get("plus_trial_eligible"),
+                "extract_link_status": row.get("extract_link_status"),
+                "codex_status": row.get("codex_status"),
+                "codex_agent_status": row.get("codex_agent_status"),
+                "totp_setup_status": row.get("totp_setup_status"),
+                "totp_setup_ok": row.get("totp_setup_ok"),
+                "totp_setup_error": row.get("totp_setup_error"),
+                "totp_setup_message": row.get("totp_setup_message"),
+                "totp_setup_checked_at": row.get("totp_setup_checked_at"),
+                "totp_setup_started_at": row.get("totp_setup_started_at"),
+                "totp_setup_completed_at": row.get("totp_setup_completed_at"),
+                "totp_enabled": bool(str(row.get("totp_secret") or "").strip()),
+                "email": row.get("email"),
+                "original_email": row.get("original_email"),
+                "email_source": row.get("email_source"),
+                "email_change_status": row.get("email_change_status"),
+                "email_change_error": row.get("email_change_error"),
+            }
+            for row in rows
+        ],
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    revision_sig = hashlib.sha1(revision_payload.encode("utf-8")).hexdigest()[:12]
+    return {"items": items, "total": total, "offset": offset, "limit": limit, "revision": f"{total}:{latest}:{revision_sig}"}
 
 
 def list_accounts(
@@ -1878,39 +1877,36 @@ def list_accounts_page(
     date_to: str | None = None,
     totp_filter: str | None = None,
 ) -> dict:
-    with _LOCK:
-        limit = max(1, int(limit))
-        offset = max(0, int(offset or 0))
-        extra_where, extra_params = _account_filter_sql(
-            plan_filter=plan_filter,
-            codex_filter=codex_filter,
-            totp_filter=totp_filter,
-        )
-        candidates, total, latest = _query_collection_page(
-            "accounts",
-            archived=archived,
-            q=q,
-            date_from=date_from,
-            date_to=date_to,
-            extra_where=extra_where,
-            extra_params=extra_params,
-            limit=limit,
-            offset=offset,
-        )
-        items = [_decorate_account(row) for row in candidates]
-        return {"items": items, "total": total, "offset": offset, "limit": limit, "revision": f"{total}:{latest}"}
+    limit = max(1, int(limit))
+    offset = max(0, int(offset or 0))
+    extra_where, extra_params = _account_filter_sql(
+        plan_filter=plan_filter,
+        codex_filter=codex_filter,
+        totp_filter=totp_filter,
+    )
+    candidates, total, latest = _query_collection_page(
+        "accounts",
+        archived=archived,
+        q=q,
+        date_from=date_from,
+        date_to=date_to,
+        extra_where=extra_where,
+        extra_params=extra_params,
+        limit=limit,
+        offset=offset,
+    )
+    items = [_decorate_account(row) for row in candidates]
+    return {"items": items, "total": total, "offset": offset, "limit": limit, "revision": f"{total}:{latest}"}
 
 
 def get_account(acc_id: int) -> dict | None:
-    with _LOCK:
-        row = next((r for r in _load_accounts() if int(r.get("id") or 0) == int(acc_id)), None)
-        return _decorate_account(row) if row else None
+    row = next((r for r in _load_accounts() if int(r.get("id") or 0) == int(acc_id)), None)
+    return _decorate_account(row) if row else None
 
 
 def get_account_by_email(email: str) -> dict | None:
-    with _LOCK:
-        row = _find_by_email(_load_accounts(), email)
-        return _decorate_account(row) if row else None
+    row = _find_by_email(_load_accounts(), email)
+    return _decorate_account(row) if row else None
 
 
 def update_account_note(acc_id: int, note: str) -> bool:
@@ -2329,10 +2325,9 @@ def archive_accounts(account_ids: list[int] | None, archived: bool = True) -> tu
 
 
 def count_accounts() -> int:
-    with _LOCK:
-        _ensure_sqlite()
-        with _conn_scope() as conn:
-            return int(conn.execute("SELECT COUNT(*) FROM accounts").fetchone()[0])
+    _ensure_sqlite()
+    with _conn_scope() as conn:
+        return int(conn.execute("SELECT COUNT(*) FROM accounts").fetchone()[0])
 
 
 def delete_account(acc_id: int | None = None, email: str | None = None) -> bool:
@@ -2699,16 +2694,14 @@ def list_outlook_pool(status: str | None = None, limit: int = 500) -> list[dict]
 
 
 def outlook_pool_summary() -> dict:
-    with _LOCK:
-        out = _pool_summary_sql("outlook")
-        out["total"] = sum(v for k, v in out.items() if k != "total")
-        return out
+    out = _pool_summary_sql("outlook")
+    out["total"] = sum(v for k, v in out.items() if k != "total")
+    return out
 
 
 def get_outlook_by_email(email: str) -> dict | None:
-    with _LOCK:
-        row = _find_by_email(_load_outlook(), email)
-        return _decorate_outlook(row) if row else None
+    row = _find_by_email(_load_outlook(), email)
+    return _decorate_outlook(row) if row else None
 
 
 # ============================================================
@@ -2809,14 +2802,12 @@ def list_generic_api_email_pool(status: str | None = None, limit: int = 500) -> 
 
 
 def generic_api_email_pool_summary() -> dict:
-    with _LOCK:
-        return _pool_summary_sql("generic_api")
+    return _pool_summary_sql("generic_api")
 
 
 def get_generic_api_email_by_email(email: str) -> dict | None:
-    with _LOCK:
-        row = _find_by_email(_load_generic_api_emails(), email)
-        return _decorate_generic_api_email(row) if row else None
+    row = _find_by_email(_load_generic_api_emails(), email)
+    return _decorate_generic_api_email(row) if row else None
 
 
 # ============================================================
@@ -2906,14 +2897,12 @@ def list_imap_email_pool(status: str | None = None, limit: int = 500) -> list[di
 
 
 def imap_email_pool_summary() -> dict:
-    with _LOCK:
-        return _pool_summary_sql("imap")
+    return _pool_summary_sql("imap")
 
 
 def get_imap_email_by_email(email: str) -> dict | None:
-    with _LOCK:
-        row = _find_by_email(_load_imap_emails(), email)
-        return _decorate_imap_email(row) if row else None
+    row = _find_by_email(_load_imap_emails(), email)
+    return _decorate_imap_email(row) if row else None
 
 
 # ============================================================
@@ -3075,20 +3064,19 @@ def read_codex_credential(filename: str) -> tuple[str, str]:
     Returns: (content_string, filename)
     抛 ValueError：文件名不合法（防目录穿越）/ 不存在。
     """
-    with _LOCK:
-        # 防注入：只允许 codex-*.json 模式，不允许路径分隔符
-        if not filename.startswith("codex-") or not filename.endswith(".json"):
-            raise ValueError(f"非法文件名: {filename}")
-        if "/" in filename or "\\" in filename or ".." in filename:
-            raise ValueError(f"非法文件名: {filename}")
-        _ensure_sqlite()
-        with _conn_scope() as conn:
-            row = conn.execute("SELECT payload FROM codex_accounts WHERE filename=?", (filename,)).fetchone()
-        if not row:
-            raise ValueError(f"文件不存在: {filename}")
-        content = json.loads(row["payload"])
-        content = {k: v for k, v in content.items() if not k.startswith("_")}
-        return json.dumps(content, ensure_ascii=False, indent=2), filename
+    # 防注入：只允许 codex-*.json 模式，不允许路径分隔符
+    if not filename.startswith("codex-") or not filename.endswith(".json"):
+        raise ValueError(f"非法文件名: {filename}")
+    if "/" in filename or "\\" in filename or ".." in filename:
+        raise ValueError(f"非法文件名: {filename}")
+    _ensure_sqlite()
+    with _conn_scope() as conn:
+        row = conn.execute("SELECT payload FROM codex_accounts WHERE filename=?", (filename,)).fetchone()
+    if not row:
+        raise ValueError(f"文件不存在: {filename}")
+    content = json.loads(row["payload"])
+    content = {k: v for k, v in content.items() if not k.startswith("_")}
+    return json.dumps(content, ensure_ascii=False, indent=2), filename
 
 
 def mark_codex_exported(filename: str) -> dict:
@@ -3143,22 +3131,21 @@ def delete_codex_credential(filename: str) -> bool:
 
 def codex_accounts_summary() -> dict:
     """codex 账号汇总：总数 / 已导出 / 未导出。"""
-    with _LOCK:
-        _ensure_sqlite()
-        with _conn_scope() as conn:
-            row = conn.execute(
-                "SELECT COUNT(*) AS total, "
-                "SUM(CASE WHEN COALESCE(CAST(json_extract(payload, '$._exported_count') AS INTEGER), 0) > 0 "
-                "THEN 1 ELSE 0 END) AS exported "
-                "FROM codex_accounts WHERE archived=0"
-            ).fetchone()
-        total = int(row["total"] or 0)
-        exported = int(row["exported"] or 0)
-        return {
-            "total": total,
-            "exported": exported,
-            "pending": total - exported,
-        }
+    _ensure_sqlite()
+    with _conn_scope() as conn:
+        row = conn.execute(
+            "SELECT COUNT(*) AS total, "
+            "SUM(CASE WHEN COALESCE(CAST(json_extract(payload, '$._exported_count') AS INTEGER), 0) > 0 "
+            "THEN 1 ELSE 0 END) AS exported "
+            "FROM codex_accounts WHERE archived=0"
+        ).fetchone()
+    total = int(row["total"] or 0)
+    exported = int(row["exported"] or 0)
+    return {
+        "total": total,
+        "exported": exported,
+        "pending": total - exported,
+    }
 
 
 # ============================================================
@@ -3296,25 +3283,23 @@ def update_job(
 
 
 def list_jobs(limit: int = 100) -> list[dict]:
-    with _LOCK:
-        return [dict(r) for r in _query_collection("jobs", limit=limit)]
+    return [dict(r) for r in _query_collection("jobs", limit=limit)]
 
 
 def list_jobs_page(limit: int = 50, offset: int = 0) -> dict:
     """直接使用 registration_jobs 的 SQL LIMIT/OFFSET 返回任务页。"""
-    with _LOCK:
-        limit = max(1, int(limit))
-        offset = max(0, int(offset or 0))
-        rows, total, latest = _query_collection_page(
-            "jobs", limit=limit, offset=offset
-        )
-        return {
-            "items": rows,
-            "total": total,
-            "offset": offset,
-            "limit": limit,
-            "revision": f"{total}:{latest}",
-        }
+    limit = max(1, int(limit))
+    offset = max(0, int(offset or 0))
+    rows, total, latest = _query_collection_page(
+        "jobs", limit=limit, offset=offset
+    )
+    return {
+        "items": rows,
+        "total": total,
+        "offset": offset,
+        "limit": limit,
+        "revision": f"{total}:{latest}",
+    }
 
 
 def job_status_counts() -> dict:
@@ -3332,28 +3317,26 @@ def job_status_counts() -> dict:
 
 
 def get_job(job_id: int) -> dict | None:
-    with _LOCK:
-        row = next((r for r in _load_jobs() if int(r.get("id") or 0) == int(job_id)), None)
-        return dict(row) if row else None
+    row = next((r for r in _load_jobs() if int(r.get("id") or 0) == int(job_id)), None)
+    return dict(row) if row else None
 
 
 def get_successful_retry_for_job(job_id: int) -> dict | None:
     """返回同一任务链中已成功的其他重试任务，用于保留原任务历史状态并阻止重复重试。"""
-    with _LOCK:
-        rows = _load_jobs()
-        source = next((r for r in rows if int(r.get("id") or 0) == int(job_id)), None)
-        if source is None:
-            return None
-        root_id = int(source.get("root_job_id") or source.get("id") or 0)
-        matches = [
-            r for r in rows
-            if int(r.get("id") or 0) != int(job_id)
-            and int(r.get("root_job_id") or 0) == root_id
-            and r.get("status") == "success"
-        ]
-        if not matches:
-            return None
-        return dict(max(matches, key=lambda r: int(r.get("id") or 0)))
+    rows = _load_jobs()
+    source = next((r for r in rows if int(r.get("id") or 0) == int(job_id)), None)
+    if source is None:
+        return None
+    root_id = int(source.get("root_job_id") or source.get("id") or 0)
+    matches = [
+        r for r in rows
+        if int(r.get("id") or 0) != int(job_id)
+        and int(r.get("root_job_id") or 0) == root_id
+        and r.get("status") == "success"
+    ]
+    if not matches:
+        return None
+    return dict(max(matches, key=lambda r: int(r.get("id") or 0)))
 
 
 def delete_job(job_id: int, *, delete_log: bool = True, allow_running: bool = False) -> bool:
@@ -3604,9 +3587,8 @@ def release_unconsumed_domain_email(email: str, note: str | None = None) -> bool
 
 
 def get_domain_email_by_email(email: str) -> dict | None:
-    with _LOCK:
-        row = _find_domain_email(_load_domain_pool(), email)
-        return dict(row) if row else None
+    row = _find_domain_email(_load_domain_pool(), email)
+    return dict(row) if row else None
 
 
 def list_domain_email_pool(status: str | None = None, limit: int = 500) -> list[dict]:
@@ -3616,8 +3598,7 @@ def list_domain_email_pool(status: str | None = None, limit: int = 500) -> list[
 
 
 def domain_email_pool_summary() -> dict:
-    with _LOCK:
-        return _pool_summary_sql("domain")
+    return _pool_summary_sql("domain")
 
 
 def delete_domain_email(email: str) -> bool:
