@@ -52,7 +52,7 @@ python -m pytest -q                   # 单元测试
 
 ### 继续拆 `app.py` 的规矩
 
-`webui/app.py` 从 3139 行降到 1650 行左右，已经搬出 `pools`(9) `jobs`(11) `codex`(16) `roxy`(1) `config`(4) 共 41 条路由；剩下 39 条集中在 `/api/accounts*`（账号、查活、提链、Codex Agent），它们和闭包状态交织得最多，放最后。做法固定，照 `webui/views/pools.py` 抄：
+`webui/app.py` 从 3139 行降到 1037 行，已经搬出 6 个域共 53 条路由：`pools`(9) `jobs`(11) `codex`(16) `roxy`(1) `config`(4) `upi`(5) `codex_agent`(7)。剩下 27 条都在 `/api/accounts*`（账号列表/查活/套餐/优惠/浏览器），是目前闭包状态最密的一块，最后做。做法固定，照 `webui/views/pools.py` 抄：
 
 1. 挑一个域（例如 `jobs`、`codex`、`config`），确认它的路由不依赖其它闭包；
 2. 整块搬进 `webui/views/<域>.py`，`@app.get` 改成 `@bp.get`，`app.py` 里 `app.register_blueprint(bp)`；

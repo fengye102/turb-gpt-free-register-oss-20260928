@@ -65,6 +65,18 @@ class PreparedDownloads:
                 self._items.pop(key, None)
 
 
+# 进程内共享的一份下载缓存：/api/downloads/<id> 与所有生成下载包的接口都用它。
+# 之所以放模块级而不是各自 new 一个，是因为「生成」和「取走」是两个不同 Blueprint 的请求。
+PREPARED_DOWNLOAD_TTL = 600
+PREPARED_DOWNLOAD_MAX = 24
+prepared_downloads = PreparedDownloads(ttl=PREPARED_DOWNLOAD_TTL, limit=PREPARED_DOWNLOAD_MAX)
+
+
+def put_prepared_download(content: bytes, filename: str, mimetype: str = "application/zip") -> str:
+    """把内容放进共享下载缓存，返回一次性 download_id。"""
+    return prepared_downloads.put(content, filename, mimetype)
+
+
 # ============================================================
 # 列表 / 分页 / 日志尾巴：给路由用的无状态工具
 # ============================================================

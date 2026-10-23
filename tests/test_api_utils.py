@@ -254,3 +254,16 @@ def test_pool_source_arg_reads_query_then_body():
         assert pool_source_arg() == "imap"
     with app.test_request_context("/api/outlook"):
         assert pool_source_arg() == "outlook"
+
+
+def test_shared_download_cache_is_module_level():
+    """生成下载包的接口和 /api/downloads/<id> 分属不同 Blueprint，必须共用一份缓存。"""
+    from webui import api_utils
+
+    download_id = api_utils.put_prepared_download(b"zip", "x.zip")
+    assert isinstance(download_id, str) and len(download_id) == 32
+    item = api_utils.prepared_downloads.take(download_id)
+    assert item["filename"] == "x.zip"
+    assert item["content"] == b"zip"
+    assert api_utils.prepared_downloads.take(download_id) is None
+
