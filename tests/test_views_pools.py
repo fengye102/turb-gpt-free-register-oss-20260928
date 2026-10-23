@@ -6,6 +6,8 @@ webui/views/pools.py 之后，路径、参数、状态码、鉴权都不许变�
 """
 from __future__ import annotations
 
+import json
+
 import pytest
 
 pytest.importorskip("pyotp", reason="WebUI 依赖 pyotp；CI 会装 requirements.txt")
@@ -130,8 +132,58 @@ def test_invalid_email_source_is_rejected(client):
     assert resp.get_json()["error"] == "邮箱来源非法"
 
 
-def test_pool_list_has_no_token_preview(client):
-    """邮箱池列表同样不下发 Token 片段。"""
+def test_pool_list_does_not_carry_account_secrets(client, isolated_db):
+    """池子行只带账号 id 与「有没有」标记，不随列表下发所关联账号的凭证。
+
+    这条用例必须真的挂一个同邮箱账号，否则断言全是空转。
+    """
+    db = isolated_db
+    client.post("/api/outlook/import", headers=AUTH, json={"source": "outlook", "text": OUTLOOK_LINES})
+    db.insert_account(
+        email="a@x.com",
+        access_token="tok-aaa",
+        totp_secret="JBSWY3DPEHPK3PXP",
+        email_source="outlook",
+        extra={"registration_password": "pw1"},
+    )
+
     rows = client.get("/api/outlook?source=outlook", headers=AUTH).get_json()
-    for item in rows or []:
-        assert "access_token_preview" not in item
+    linked = next(item for item in rows if item["email"] == "a@x.com")
+    assert linked["registered_account_id"]
+    assert linked["has_access_token"] is True
+    assert linked["totp_enabled"] is True
+    for secret in ("access_token", "access_token_preview", "totp_secret", "account_copy_line"):
+        assert secret not in linked, f"池子列表不该下发 {secret}"
+
+    # 池子自身的导入素材照旧下发：这个页面本来就是拿来导出这些的。
+    assert linked["copy_line"].startswith("a@x.com----pw1")
+
+    # 账号凭证按需取，仍然拿得到。
+    secret = client.get(
+        f"/api/accounts/{linked['registered_account_id']}/secret?field=access_token", headers=AUTH
+    )
+    assert secret.get_json()["value"] == "tok-aaa"
+
+
+def test_pool_list_strips_legacy_credential_copies(client, isolated_db):
+    """老库里池子 payload 存过账号凭证副本：列表必须剥掉，并转成「有没有」标记。"""
+    db = isolated_db
+    client.post("/api/outlook/import", headers=AUTH, json={"source": "outlook", "text": OUTLOOK_LINES})
+    with db._conn_scope() as conn, conn:
+        row = conn.execute("SELECT payload FROM email_pool WHERE email='a@x.com'").fetchone()
+        payload = json.loads(row["payload"])
+        payload["access_token"] = "legacy-tok"
+        payload["access_token_preview"] = "legacy-tok..."
+        payload["totp_secret"] = "LEGACYSECRET"
+        payload["account_copy_line"] = "a@x.com----legacy"
+        conn.execute(
+            "UPDATE email_pool SET payload=? WHERE email='a@x.com'",
+            (json.dumps(payload, ensure_ascii=False),),
+        )
+
+    rows = client.get("/api/outlook?source=outlook", headers=AUTH).get_json()
+    item = next(r for r in rows if r["email"] == "a@x.com")
+    for leaked in ("access_token", "access_token_preview", "totp_secret", "account_copy_line"):
+        assert leaked not in item, f"老库副本 {leaked} 不该随列表下发"
+    assert item["has_access_token"] is True
+    assert item["totp_enabled"] is True

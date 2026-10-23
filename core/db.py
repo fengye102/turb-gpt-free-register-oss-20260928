@@ -883,11 +883,11 @@ def _decorate_outlook(row: dict, account_by_email: dict[str, dict] | None = None
         account = account_by_email.get((out.get("email") or "").lower())
     if account:
         out["registered_account_id"] = account.get("id")
-        out["access_token"] = account.get("access_token")
-        # 这里曾经还下发 access_token 前 40 字符的「预览」：全仓没有任何消费方，
-        # 但它是可外泄的凭证片段，且与账号列表「不下发 Token 预览」的口径自相矛盾，已删。
-        out["account_copy_line"] = _account_line(account)
-        out["totp_secret"] = account.get("totp_secret")
+        # 不再把所关联账号的凭证随邮箱池列表下发。账号那一侧有自己的列表，
+        # 取明文走 GET /api/accounts/<id>/secret 或 POST /api/accounts/secret-bulk；
+        # 池子这边只需要一个「有没有」的标记加账号 id（前端据此按需取）。
+        out["has_access_token"] = bool(str(account.get("access_token") or "").strip())
+        out["totp_enabled"] = bool(str(account.get("totp_secret") or "").strip())
     return out
 
 
@@ -902,11 +902,11 @@ def _decorate_generic_api_email(row: dict, account_by_email: dict[str, dict] | N
         account = account_by_email.get((out.get("email") or "").lower())
     if account:
         out["registered_account_id"] = account.get("id")
-        out["access_token"] = account.get("access_token")
-        # 这里曾经还下发 access_token 前 40 字符的「预览」：全仓没有任何消费方，
-        # 但它是可外泄的凭证片段，且与账号列表「不下发 Token 预览」的口径自相矛盾，已删。
-        out["account_copy_line"] = _account_line(account)
-        out["totp_secret"] = account.get("totp_secret")
+        # 不再把所关联账号的凭证随邮箱池列表下发。账号那一侧有自己的列表，
+        # 取明文走 GET /api/accounts/<id>/secret 或 POST /api/accounts/secret-bulk；
+        # 池子这边只需要一个「有没有」的标记加账号 id（前端据此按需取）。
+        out["has_access_token"] = bool(str(account.get("access_token") or "").strip())
+        out["totp_enabled"] = bool(str(account.get("totp_secret") or "").strip())
     return out
 
 
@@ -916,10 +916,11 @@ def _decorate_imap_email(row: dict, account_by_email: dict[str, dict] | None = N
     account = account_by_email.get((out.get("email") or "").lower()) if account_by_email else None
     if account:
         out["registered_account_id"] = account.get("id")
-        out["access_token"] = account.get("access_token")
-        # 同上：token 预览无人消费，已删。
-        out["account_copy_line"] = _account_line(account)
-        out["totp_secret"] = account.get("totp_secret")
+        # 不再把所关联账号的凭证随邮箱池列表下发。账号那一侧有自己的列表，
+        # 取明文走 GET /api/accounts/<id>/secret 或 POST /api/accounts/secret-bulk；
+        # 池子这边只需要一个「有没有」的标记加账号 id（前端据此按需取）。
+        out["has_access_token"] = bool(str(account.get("access_token") or "").strip())
+        out["totp_enabled"] = bool(str(account.get("totp_secret") or "").strip())
     return out
 
 
@@ -1007,6 +1008,14 @@ def list_email_pool_page(
         else:
             item = dict(item)
         item["source"] = item_source
+        # 历史遗留：池子 payload 里曾被写入所关联账号的 access_token / totp_secret
+        # （见 insert_account 与 import_registered_email_accounts 的旧逻辑）。
+        # 列表只转成「有没有」的标记，明文一律剥离 —— 老库里的副本也不能再随列表出去。
+        for stale in ("access_token", "access_token_preview", "account_copy_line"):
+            if item.pop(stale, None) and not item.get("has_access_token"):
+                item["has_access_token"] = True
+        if item.pop("totp_secret", None) and not item.get("totp_enabled"):
+            item["totp_enabled"] = True
         if not item.get("copy_line"):
             item["copy_line"] = item.get("email") or ""
         items.append(item)
@@ -1085,10 +1094,10 @@ def insert_account(
             outlook_row["status"] = "used"
             outlook_row["used_at"] = outlook_row.get("used_at") or _now()
             outlook_row["registered_account_id"] = row_id
-            outlook_row["access_token"] = access_token
+            # 这里过去会把账号的 access_token / totp_secret 抄一份到池子 payload 里。
+            # 同一份凭证在两个表里各存一份，等于多开一个外泄面，也迟早会不同步；
+            # 池子只留 registered_account_id，要明文去账号侧取（secret 接口）。
             outlook_row["completed_at"] = _now()
-            if totp_secret:
-                outlook_row["totp_secret"] = totp_secret
 
         row["copy_line"] = _account_line(row)
         _save_accounts(accounts)
@@ -2573,9 +2582,7 @@ def import_registered_email_accounts(records: list[dict], source: str | None) ->
             accounts.append(account)
 
             pool_row["registered_account_id"] = row_id
-            pool_row["access_token"] = access_token
-            if totp_secret:
-                pool_row["totp_secret"] = totp_secret
+            # 同上：池子行不再留存账号凭证的副本。
             inserted += 1
 
         _save_outlook(outlook_rows)

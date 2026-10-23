@@ -2727,11 +2727,11 @@ function renderOutlook() {
       <td><div class="main-cell">${esc(r.email)}</div><div class="sub-cell mono">${esc(short(r.copy_line, 70))}</div></td>
       <td>${esc(poolLabel(r.source))}</td>
       <td>${pill(r.status)}</td>
-      <td><span class="mono">${esc(short(r.access_token || '', 36) || '未生成')}</span></td>
+      <td><span class="mono">${r.has_access_token ? '已生成' : '未生成'}</span></td>
       <td class="muted">${esc(formatDateTime(r.imported_at || r.created_at))}</td>
       <td class="muted">${esc(formatDateTime(r.used_at))}</td>
       <td class="actions">
-        ${cbtn('复制邮箱', r.copy_line)} ${cbtn('复制Token', r.access_token, 'primary')} ${cbtn('复制整行', r.account_copy_line, 'good')}
+        ${cbtn('复制邮箱', r.copy_line)} ${r.registered_account_id ? `<button data-account-copy-secret="access_token" data-account-id="${esc(r.registered_account_id)}">复制Token</button>` : ''} ${r.registered_account_id ? `<button data-account-copy-secret="copy_line" data-account-id="${esc(r.registered_account_id)}">复制整行</button>` : ''}
         ${r.status !== 'available'
           ? `<button data-pool-act="available" data-email="${esc(r.email)}" data-source="${esc(r.source || $('#poolSource')?.value || 'all')}">恢复可用</button>`
           : ''}
@@ -2807,6 +2807,24 @@ $('#btnMarkSelectedOutlookAvailable').addEventListener('click', () => bulkMarkOu
 $('#btnDisableSelectedOutlook').addEventListener('click', () => bulkMarkOutlookStatus('disabled'));
 $('#btnFailSelectedOutlook').addEventListener('click', () => bulkMarkOutlookStatus('failed'));
 $('#outlookBody').addEventListener('click', async (e) => {
+  const poolSecretBtn = e.target.closest('[data-account-copy-secret]');
+  if (poolSecretBtn) {
+    // 池子里的 Token / 整行不再随列表下发，点的时候按需向账号侧取（同一个 secret 接口）。
+    const id = Number(poolSecretBtn.dataset.accountId);
+    const field = poolSecretBtn.dataset.accountCopySecret;
+    poolSecretBtn.disabled = true;
+    try {
+      const value = await fetchOneAccountSecret(id, field);
+      if (!value) { showToast('可复制内容为空'); return; }
+      copyText(value);
+      showToast(field === 'access_token' ? 'Token 已复制' : '账号整行已复制');
+    } catch (err) {
+      showToast('复制失败: ' + err.message);
+    } finally {
+      poolSecretBtn.disabled = false;
+    }
+    return;
+  }
   const t = e.target.closest('[data-pool-act]');
   if (!t) return;
   const { poolAct, email } = t.dataset;

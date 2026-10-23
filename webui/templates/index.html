@@ -5431,18 +5431,19 @@ function positionOutlookV2MoreMenu(wrap) {
   menu.style.top = `${top}px`;
 }
 function _outlookTokenCell(r) {
-  if (r.access_token) {
-    const id = copyId(r.access_token);
-    return `<button type="button" class="acc-v2-token-copy" data-copy-id="${id}" title="复制 Token">复制</button>`;
+  // Token 不再随池子列表下发：行里只带 registered_account_id，
+  // 点「复制」时按需向账号侧取（与账号列表用同一个 secret 接口）。
+  if (r.registered_account_id) {
+    return '<button type="button" class="acc-v2-token-copy" data-account-copy-secret="access_token" data-account-id="' + esc(r.registered_account_id) + '" title="复制 Token">复制</button>';
   }
-  return `<span class="acc-v2-token-none">无Token</span>`;
+  return '<span class="acc-v2-token-none">无Token</span>';
 }
 function _outlookMoreMenu(r) {
   const src = esc(r.source || getPoolSource() || 'all');
   const email = esc(r.email);
   const items = [
-    cbtn('复制Token', r.access_token, 'good'),
-    cbtn('复制整行', r.account_copy_line, 'good'),
+    r.registered_account_id ? `<button type="button" data-account-copy-secret="access_token" data-account-id="${esc(r.registered_account_id)}">复制Token</button>` : '',
+    r.registered_account_id ? `<button type="button" data-account-copy-secret="copy_line" data-account-id="${esc(r.registered_account_id)}">复制整行</button>` : '',
     r.status !== 'available' ? `<button type="button" data-pool-act="available" data-email="${email}" data-source="${src}">恢复可用</button>` : '',
     r.status !== 'disabled' ? `<button type="button" data-pool-act="disabled" data-email="${email}" data-source="${src}">停用</button>` : '',
     r.status !== 'failed' ? `<button type="button" data-pool-act="failed" data-email="${email}" data-source="${src}">标失败</button>` : '',
@@ -5548,6 +5549,24 @@ async function onOutlookBodyClick(e) {
   }
   if (e.target.closest('.acc-v2-more-menu')) closeOutlookV2MoreMenus();
 
+  const poolSecretBtn = e.target.closest('[data-account-copy-secret]');
+  if (poolSecretBtn) {
+    // 池子里的 Token / 整行不再随列表下发，点的时候按需向账号侧取（同一个 secret 接口）。
+    const id = Number(poolSecretBtn.dataset.accountId);
+    const field = poolSecretBtn.dataset.accountCopySecret;
+    poolSecretBtn.disabled = true;
+    try {
+      const value = await fetchOneAccountSecret(id, field);
+      if (!value) { showToast('可复制内容为空'); return; }
+      copyText(value);
+      showToast(field === 'access_token' ? 'Token 已复制' : '账号整行已复制');
+    } catch (err) {
+      showToast('复制失败: ' + err.message);
+    } finally {
+      poolSecretBtn.disabled = false;
+    }
+    return;
+  }
   const t = e.target.closest('[data-pool-act]');
   if (!t) return;
   const { poolAct, email } = t.dataset;
