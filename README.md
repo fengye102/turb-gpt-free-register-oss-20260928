@@ -52,7 +52,20 @@ python -m pytest -q                   # 单元测试
 
 ### 继续拆 `app.py` 的规矩
 
-`webui/app.py` 从 3139 行降到 1037 行，已经搬出 6 个域共 53 条路由：`pools`(9) `jobs`(11) `codex`(16) `roxy`(1) `config`(4) `upi`(5) `codex_agent`(7)。剩下 27 条都在 `/api/accounts*`（账号列表/查活/套餐/优惠/浏览器），是目前闭包状态最密的一块，最后做。做法固定，照 `webui/views/pools.py` 抄：
+`webui/app.py` 已经拆完：**3139 → 225 行**，只剩装配 + 三条全局路由（页面 / 统计概览 / 一次性下载）。业务路由全部在 `webui/views/`：
+
+| 模块 | 路由数 | 负责 |
+|---|---|---|
+| `pools.py` | 9 | Outlook / 通用 API / IMAP 邮箱池 + 域名邮箱池 |
+| `jobs.py` | 11 | 注册任务与手动 OTP |
+| `codex.py` | 16 | Codex 授权凭证、补跑、导出 |
+| `codex_agent.py` | 7 | Codex Agent Token 与 CPA 批量导出 |
+| `accounts.py` | 24 | 账号列表、查活、套餐/优惠、拉起浏览器、各类日志 |
+| `roxy.py` | 1 | RoxyBrowser 工作区探测 |
+| `config.py` | 4 | 配置读写 + CloudMail 辅助 |
+| `upi.py` | 5 | 零元提链（可选组件，缺件返回 503） |
+
+搬迁后的护栏：**80 条路由与 initial commit 逐条比对零差异**，每个模块都有「搬家不改行为」的用例。继续拆新域时照 `webui/views/pools.py` 抄：
 
 1. 挑一个域（例如 `jobs`、`codex`、`config`），确认它的路由不依赖其它闭包；
 2. 整块搬进 `webui/views/<域>.py`，`@app.get` 改成 `@bp.get`，`app.py` 里 `app.register_blueprint(bp)`；
