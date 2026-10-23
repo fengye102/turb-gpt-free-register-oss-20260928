@@ -2,7 +2,6 @@
 """落库时间戳必须带时区；旧的无时区本地时间戳仍要能被正确判定新旧。"""
 from __future__ import annotations
 
-from contextlib import closing
 from datetime import datetime, timedelta, timezone
 
 import json
@@ -12,7 +11,7 @@ import pytest
 
 def _set_plan_stamp(db, acc_id: int, stamp: str) -> None:
     """plan_check_* 存在 payload JSON 里，不是独立列，必须整行改写 payload。"""
-    with closing(db._sqlite_conn()) as conn, conn:
+    with db._conn_scope() as conn, conn:
         row = conn.execute("SELECT payload FROM accounts WHERE id=?", (acc_id,)).fetchone()
         data = json.loads(row["payload"])
         data["plan_check_status"] = "queued"

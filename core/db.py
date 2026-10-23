@@ -4,16 +4,17 @@ SQLite 持久化层（JSON/TXT 仅用于首次迁移）。
 
 运行时数据全部存储在根目录 `turb.sqlite3`；旧 JSON/TXT/Codex 文件仅用于一次性迁移。
 """
+import atexit
 import hashlib
 import json
 import logging
 import sqlite3
 import threading
 import uuid
-from contextlib import closing
+from contextlib import closing, contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterator
 
 logger = logging.getLogger(__name__)
 
@@ -92,15 +93,71 @@ def _ensure_storage() -> None:
     _LOG_DIR.mkdir(parents=True, exist_ok=True)
 
 
+_TLS = threading.local()
+_ALL_CONNS: list[sqlite3.Connection] = []
+_CONNS_LOCK = threading.Lock()
+
+
 def _sqlite_conn() -> sqlite3.Connection:
-    """创建短生命周期连接；WAL 允许 WebUI 读与注册线程写并行。"""
+    """返回**本线程复用**的连接；不跨线程共享（sqlite3 默认 check_same_thread=True）。
+
+    为什么不每次新建：实测新连接的「第一次执行」在本机要 ~2.1ms，跟语句内容无关
+    （空连接 0.16ms，空连接上跑一条 SELECT 1 就要 2.1ms，连发三条 PRAGMA 还是 2.1ms），
+    而复用连接后单次查询 ~0.001ms。原来 27 个调用点各自建连，WebUI 一次列表请求
+    要白等几十毫秒。WAL / busy_timeout 该设的仍然设，只是不再按调用次数设。
+    """
     _ensure_storage()
-    conn = sqlite3.connect(str(_active_sqlite_path()), timeout=30)
+    path = str(_active_sqlite_path())
+    cached = getattr(_TLS, "conn", None)
+    if cached is not None and getattr(_TLS, "path", None) == path:
+        try:
+            cached.execute("SELECT 1")
+            return cached
+        except sqlite3.Error:
+            close_thread_conn()
+    conn = sqlite3.connect(path, timeout=30)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA busy_timeout=30000")
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA synchronous=NORMAL")
+    _TLS.conn = conn
+    _TLS.path = path
+    with _CONNS_LOCK:
+        _ALL_CONNS.append(conn)
     return conn
+
+
+@contextmanager
+def _conn_scope() -> Iterator[sqlite3.Connection]:
+    """借用本线程连接并归还（不关闭），交给下一次调用复用。"""
+    yield _sqlite_conn()
+
+
+def close_thread_conn() -> None:
+    """关闭并丢弃本线程的连接；线程或测试用例结束时调用，避免句柄泄漏。"""
+    conn = getattr(_TLS, "conn", None)
+    _TLS.conn = None
+    _TLS.path = None
+    if conn is None:
+        return
+    with _CONNS_LOCK:
+        if any(item is conn for item in _ALL_CONNS):
+            _ALL_CONNS[:] = [item for item in _ALL_CONNS if item is not conn]
+    try:
+        conn.close()
+    except sqlite3.Error:
+        pass
+
+
+@atexit.register
+def _close_all_conns() -> None:
+    with _CONNS_LOCK:
+        conns, _ALL_CONNS[:] = list(_ALL_CONNS), []
+    for conn in conns:
+        try:
+            conn.close()
+        except sqlite3.Error:
+            pass
 
 
 def _active_sqlite_path() -> Path:
@@ -344,7 +401,7 @@ def _ensure_sqlite() -> None:
         if not migration_done:
             conn.execute("INSERT OR REPLACE INTO storage_meta(key, value) VALUES('legacy_import_completed', ?)", (_now(),))
         conn.commit()
-        conn.close()
+        # 连接交回线程缓存继续复用，不在这里关闭（见 _sqlite_conn）。
         _SQLITE_READY = True
         _SQLITE_READY_PATH = active_path
 
@@ -352,7 +409,7 @@ def _ensure_sqlite() -> None:
 def _load_collection(collection: str) -> list[dict]:
     _ensure_sqlite()
     table = _TABLES[collection]
-    with closing(_sqlite_conn()) as conn:
+    with _conn_scope() as conn:
         with conn:
             sql = f"SELECT payload FROM {table}"
             params: tuple[str, ...] = ()
@@ -377,7 +434,7 @@ def _save_account_row(row: dict) -> None:
     if rid <= 0:
         raise ValueError("账号行缺少 id，无法单行更新")
     payload = json.dumps(row, ensure_ascii=False)
-    with closing(_sqlite_conn()) as conn:
+    with _conn_scope() as conn:
         with conn:
             conn.execute(
                 "UPDATE accounts SET payload=?, email=?, archived=?, updated_at=? WHERE id=?",
@@ -390,7 +447,7 @@ def _save_collection(collection: str, rows: list[dict]) -> None:
     _ensure_sqlite()
     table = _TABLES[collection]
     source = _EMAIL_SOURCES[collection] if table == "email_pool" else None
-    with closing(_sqlite_conn()) as conn:
+    with _conn_scope() as conn:
         with conn:
             if table == "email_pool":
                 conn.execute("DELETE FROM email_pool WHERE source=?", (source,))
@@ -444,7 +501,7 @@ def _query_collection(collection: str, *, status: str | None = None, archived: s
     sql = f"SELECT payload FROM {table} WHERE " + " AND ".join(where) + " ORDER BY id DESC"
     if limit is not None:
         sql += " LIMIT ? OFFSET ?"; params.extend([max(0, int(limit)), max(0, int(offset))])
-    with closing(_sqlite_conn()) as conn:
+    with _conn_scope() as conn:
         return [json.loads(row["payload"]) for row in conn.execute(sql, params)]
 
 
@@ -477,7 +534,7 @@ def _query_collection_page(collection: str, *, status: str | None = None,
         where.extend(extra_where)
         params.extend(extra_params or [])
     clause = " AND ".join(where)
-    with closing(_sqlite_conn()) as conn:
+    with _conn_scope() as conn:
         total = int(conn.execute(f"SELECT COUNT(*) FROM {table} WHERE {clause}", params).fetchone()[0])
         latest = str(conn.execute(f"SELECT COALESCE(MAX(updated_at), '') FROM {table} WHERE {clause}", params).fetchone()[0] or "")
         rows = [json.loads(row["payload"]) for row in conn.execute(
@@ -565,7 +622,7 @@ def _account_filter_sql(
 def _pool_summary_sql(collection: str) -> dict:
     _ensure_sqlite()
     table = _TABLES[collection]
-    with closing(_sqlite_conn()) as conn:
+    with _conn_scope() as conn:
         where = " WHERE source=?" if table == "email_pool" else ""
         params = (_EMAIL_SOURCES[collection],) if table == "email_pool" else ()
         counts = {str(r["status"] or "available"): int(r["n"]) for r in conn.execute(
@@ -919,7 +976,7 @@ def list_email_pool_page(
         params.extend([like, like, like])
     clause = " AND ".join(where)
     order_by = "ep.created_at DESC, ep.id DESC" if source == "all" else "ep.id DESC"
-    with _LOCK, closing(_sqlite_conn()) as conn:
+    with _LOCK, _conn_scope() as conn:
         total = int(conn.execute(f"SELECT COUNT(*) FROM email_pool AS ep WHERE {clause}", params).fetchone()[0])
         latest = str(conn.execute(
             f"SELECT COALESCE(MAX(ep.updated_at), '') FROM email_pool AS ep WHERE {clause}",
@@ -1149,7 +1206,7 @@ def update_account_codex_agent(acc_id: int, result: dict | None = None) -> bool:
             agent_filename = f"codex-agent-{str(row.get('email') or acc_id)}.json"
             stamp = _now()
             _ensure_sqlite()
-            with closing(_sqlite_conn()) as conn:
+            with _conn_scope() as conn:
                 conn.execute(
                     "INSERT INTO codex_agent_accounts(account_id,email,filename,created_at,updated_at,payload) VALUES(?,?,?,?,?,?) "
                     "ON CONFLICT(account_id) DO UPDATE SET email=excluded.email, filename=excluded.filename, updated_at=excluded.updated_at, payload=excluded.payload",
@@ -1181,7 +1238,7 @@ def update_account_codex_agent(acc_id: int, result: dict | None = None) -> bool:
 def get_codex_agent_credential(acc_id: int) -> tuple[str, str] | None:
     """从 SQLite 获取 Agent 凭证，返回 JSON 文本和下载文件名。"""
     _ensure_sqlite()
-    with closing(_sqlite_conn()) as conn:
+    with _conn_scope() as conn:
         row = conn.execute("SELECT filename, payload FROM codex_agent_accounts WHERE account_id=?", (int(acc_id),)).fetchone()
     if not row:
         return None
@@ -1431,7 +1488,7 @@ def update_account_plan_check(acc_id: int | None = None, email: str | None = Non
 def _edit_account_extract(acc_id: int, mutate) -> bool:
     """在 SQLite 写事务内读取并更新单个账号的提链字段。"""
     _ensure_sqlite()
-    with _LOCK, closing(_sqlite_conn()) as conn:
+    with _LOCK, _conn_scope() as conn:
         with conn:
             conn.execute("BEGIN IMMEDIATE")
             stored = conn.execute("SELECT payload FROM accounts WHERE id=?", (int(acc_id),)).fetchone()
@@ -1544,7 +1601,7 @@ def update_account_extract(acc_id: int, result: dict | None = None) -> bool:
 def recover_interrupted_extract_links() -> int:
     """服务启动时恢复上次进程中断的提链状态。"""
     _ensure_sqlite()
-    with _LOCK, closing(_sqlite_conn()) as conn:
+    with _LOCK, _conn_scope() as conn:
         with conn:
             conn.execute("BEGIN IMMEDIATE")
             active = conn.execute(
@@ -2274,7 +2331,7 @@ def archive_accounts(account_ids: list[int] | None, archived: bool = True) -> tu
 def count_accounts() -> int:
     with _LOCK:
         _ensure_sqlite()
-        with closing(_sqlite_conn()) as conn:
+        with _conn_scope() as conn:
             return int(conn.execute("SELECT COUNT(*) FROM accounts").fetchone()[0])
 
 
@@ -2299,7 +2356,7 @@ def delete_account(acc_id: int | None = None, email: str | None = None) -> bool:
         _save_accounts(new_rows)
         if deleted_ids:
             _ensure_sqlite()
-            with closing(_sqlite_conn()) as conn:
+            with _conn_scope() as conn:
                 conn.executemany("DELETE FROM codex_agent_accounts WHERE account_id=?", [(x,) for x in deleted_ids])
                 conn.commit()
         return True
@@ -2335,7 +2392,7 @@ def delete_accounts(account_ids: list[int] | None = None, emails: list[str] | No
         if deleted:
             _save_accounts(new_rows)
             _ensure_sqlite()
-            with closing(_sqlite_conn()) as conn:
+            with _conn_scope() as conn:
                 conn.executemany("DELETE FROM codex_agent_accounts WHERE account_id=?", [(x["id"],) for x in deleted])
                 conn.commit()
     return deleted, skipped
@@ -2609,7 +2666,7 @@ def delete_email_pool(email: str, source: str = "all") -> bool:
 
     with _LOCK:
         _ensure_sqlite()
-        with closing(_sqlite_conn()) as conn:
+        with _conn_scope() as conn:
             if source == "all":
                 cur = conn.execute(
                     "DELETE FROM email_pool WHERE email = ? COLLATE NOCASE",
@@ -2924,7 +2981,7 @@ def list_codex_accounts_page(
     offset = max(0, int(offset or 0))
     where, params = _codex_filter_sql(archived, date_from, date_to, q)
     clause = " AND ".join(where) if where else "1=1"
-    with closing(_sqlite_conn()) as conn:
+    with _conn_scope() as conn:
         total = int(conn.execute(f"SELECT COUNT(*) FROM codex_accounts WHERE {clause}", params).fetchone()[0])
         latest = str(conn.execute(
             f"SELECT COALESCE(MAX(updated_at), '') FROM codex_accounts WHERE {clause}", params
@@ -2954,7 +3011,7 @@ def list_codex_accounts(
     _ensure_sqlite()
     where, params = _codex_filter_sql(archived, date_from, date_to, q)
     clause = " AND ".join(where) if where else "1=1"
-    with closing(_sqlite_conn()) as conn:
+    with _conn_scope() as conn:
         rows = [json.loads(row["payload"]) for row in conn.execute(
             f"SELECT payload FROM codex_accounts WHERE {clause} ORDER BY created_at DESC, id DESC", params
         )]
@@ -2967,7 +3024,7 @@ def upsert_codex_credential(content: dict, filename: str) -> str:
         raise ValueError("Codex 凭证或文件名无效")
     _ensure_sqlite()
     now = _now()
-    with _LOCK, closing(_sqlite_conn()) as conn:
+    with _LOCK, _conn_scope() as conn:
         old = conn.execute("SELECT payload, created_at FROM codex_accounts WHERE filename=?", (filename,)).fetchone()
         meta = dict(content)
         if old:
@@ -2997,7 +3054,7 @@ def archive_codex(filename: str, archived: bool = True) -> dict | None:
         if "/" in filename or "\\" in filename or ".." in filename:
             raise ValueError(f"非法文件名: {filename}")
         _ensure_sqlite()
-        with closing(_sqlite_conn()) as conn:
+        with _conn_scope() as conn:
             row = conn.execute("SELECT payload FROM codex_accounts WHERE filename=?", (filename,)).fetchone()
             if not row:
                 return None
@@ -3006,7 +3063,7 @@ def archive_codex(filename: str, archived: bool = True) -> dict | None:
         rec["archived"] = bool(archived)
         rec["archived_at"] = _now() if archived else None
         content.update({"_archived": rec["archived"], "_archived_at": rec["archived_at"]})
-        with closing(_sqlite_conn()) as conn:
+        with _conn_scope() as conn:
             conn.execute("UPDATE codex_accounts SET archived=?, updated_at=?, payload=? WHERE filename=?", (int(archived), _now(), json.dumps(content, ensure_ascii=False), filename))
             conn.commit()
         return rec
@@ -3025,7 +3082,7 @@ def read_codex_credential(filename: str) -> tuple[str, str]:
         if "/" in filename or "\\" in filename or ".." in filename:
             raise ValueError(f"非法文件名: {filename}")
         _ensure_sqlite()
-        with closing(_sqlite_conn()) as conn:
+        with _conn_scope() as conn:
             row = conn.execute("SELECT payload FROM codex_accounts WHERE filename=?", (filename,)).fetchone()
         if not row:
             raise ValueError(f"文件不存在: {filename}")
@@ -3041,7 +3098,7 @@ def mark_codex_exported(filename: str) -> dict:
     """
     with _LOCK:
         _ensure_sqlite()
-        with closing(_sqlite_conn()) as conn:
+        with _conn_scope() as conn:
             row = conn.execute("SELECT payload FROM codex_accounts WHERE filename=?", (filename,)).fetchone()
             if not row:
                 return {"exported_count": 0}
@@ -3050,7 +3107,7 @@ def mark_codex_exported(filename: str) -> dict:
         rec["exported_count"] = int(rec.get("exported_count", 0)) + 1
         rec["exported_at"] = _now()
         content.update({"_exported_count": rec["exported_count"], "_exported_at": rec["exported_at"]})
-        with closing(_sqlite_conn()) as conn:
+        with _conn_scope() as conn:
             conn.execute("UPDATE codex_accounts SET updated_at=?, payload=? WHERE filename=?", (_now(), json.dumps(content, ensure_ascii=False), filename))
             conn.commit()
         return rec
@@ -3060,7 +3117,7 @@ def reset_codex_exported(filename: str) -> None:
     """清掉某个 codex 凭证的导出状态（用户想重置时用）。"""
     with _LOCK:
         _ensure_sqlite()
-        with closing(_sqlite_conn()) as conn:
+        with _conn_scope() as conn:
             row = conn.execute("SELECT payload FROM codex_accounts WHERE filename=?", (filename,)).fetchone()
             if not row:
                 return
@@ -3078,7 +3135,7 @@ def delete_codex_credential(filename: str) -> bool:
         if "/" in filename or "\\" in filename or ".." in filename:
             raise ValueError(f"非法文件名: {filename}")
         _ensure_sqlite()
-        with closing(_sqlite_conn()) as conn:
+        with _conn_scope() as conn:
             cur = conn.execute("DELETE FROM codex_accounts WHERE filename=?", (filename,))
             conn.commit()
             return cur.rowcount > 0
@@ -3088,7 +3145,7 @@ def codex_accounts_summary() -> dict:
     """codex 账号汇总：总数 / 已导出 / 未导出。"""
     with _LOCK:
         _ensure_sqlite()
-        with closing(_sqlite_conn()) as conn:
+        with _conn_scope() as conn:
             row = conn.execute(
                 "SELECT COUNT(*) AS total, "
                 "SUM(CASE WHEN COALESCE(CAST(json_extract(payload, '$._exported_count') AS INTEGER), 0) > 0 "
@@ -3263,7 +3320,7 @@ def list_jobs_page(limit: int = 50, offset: int = 0) -> dict:
 def job_status_counts() -> dict:
     """在 SQLite 中聚合任务状态，避免为统计目的加载全部任务 payload。"""
     _ensure_sqlite()
-    with closing(_sqlite_conn()) as conn:
+    with _conn_scope() as conn:
         counts = {
             str(row["status"] or "unknown"): int(row["n"])
             for row in conn.execute(

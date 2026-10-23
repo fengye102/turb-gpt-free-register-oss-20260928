@@ -36,4 +36,5 @@ def isolated_db(tmp_path, monkeypatch):
     monkeypatch.setattr(db, "_SQLITE_READY", False)
     monkeypatch.setattr(db, "_SQLITE_READY_PATH", None)
     yield db
+    db.close_thread_conn()
     assert str(tmp_path) in str(db._active_sqlite_path()), "用例必须落在临时目录"
