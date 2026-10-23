@@ -10,9 +10,12 @@
     4. 读取时优先 `.env`，缺失时回退解析 `config/*.py` 默认值。
 """
 import ast
+import logging
 import os
 import re
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 _CONFIG_DIR = _PROJECT_ROOT / "config"
@@ -382,6 +385,10 @@ EDITABLE_FIELDS = [
         "label": "Outlook取件模式", "help": "auto=远端优先，远端 402/DEPLOYMENT_DISABLED 自动切 Graph 直连；direct=只用 Microsoft Graph 直连；remote=只用远端服务",
     },
     {
+        "key": "MAIL_TLS_VERIFY", "file": "email.py", "type": "bool", "group": "邮箱 / OTP",
+        "label": "邮箱网关校验 TLS 证书", "help": "默认开启。关闭后取码通道可被中间人替换，仅自签证书的自建网关才关",
+    },
+    {
         "key": "EMAIL_DOMAIN", "file": "email.py", "type": "str", "group": "邮箱 / OTP",
         "label": "转发域名(cloudflare_domain)", "help": "Duck 隐私邮箱填 duck.com；自有 Cloudflare 域名填 mydomain.com",
     },
@@ -715,8 +722,8 @@ def _literal_default_from_expr(node):
     """
     try:
         return ast.literal_eval(node)
-    except Exception:
-        pass
+    except Exception as _ignored_exc:
+        logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
 
     if isinstance(node, ast.Call):
         func_name = ""
@@ -820,8 +827,8 @@ def _coerce_raw_value(raw: str, fallback, vtype: str):
                 val = ast.literal_eval(text)
                 if isinstance(val, (list, tuple)):
                     return [str(x).strip() for x in val if str(x).strip()]
-            except Exception:
-                pass
+            except Exception as _ignored_exc:
+                logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
             return [line.strip() for line in text.splitlines() if line.strip()]
         return str(raw)
     except Exception:

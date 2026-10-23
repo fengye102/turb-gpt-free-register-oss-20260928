@@ -7,7 +7,13 @@ Outlook 注册邮箱与 OTP 的默认池行为：
     2. 运行期间通过 WebUI「邮箱库」导入和管理邮箱
     3. 注册时直接从 SQLite 邮箱库领取可用邮箱
 """
-from config.env_loader import env_str, apply_env_overrides
+from config.env_loader import env_str, env_bool, apply_env_overrides
+
+
+# 邮箱 / flow 网关（generic_api 取码、flow trigger、chatai 取件等）的 TLS 证书校验。
+# 默认开启。只有用自签证书的自建网关才该在 .env 里设 MAIL_TLS_VERIFY=False：
+# 关掉等于把 OTP 取码通道摊开给中间人，验证码可能被换成别人的。
+MAIL_TLS_VERIFY = env_bool("MAIL_TLS_VERIFY", True)
 
 
 # True: REGISTER_EMAIL 留空时从 Outlook 账号池自动获取邮箱，OTP 自动收取
@@ -225,4 +231,4 @@ TEMPMAILIO_PROXY = env_str("TEMPMAILIO_PROXY", "")
 TEMPMAILIO_NAME_LENGTH = 10
 
 # ---- .env overrides for WebUI editable fields ----
-apply_env_overrides(globals(), {'USE_EMAIL_SERVICE': 'bool', 'OTP_MAX_WAIT': 'int', 'OTP_POLL_INTERVAL': 'int', 'EMAIL_SOURCE': 'str', 'IMAP_MAILBOX': 'str', 'EMAIL_DOMAIN': 'str', 'DUCK_EMAIL_TOKEN': 'str', 'QQ_EMAIL': 'str', 'QQ_IMAP_PASSWORD': 'str', 'GPTMAIL_API_KEY': 'str', 'OUTLOOK_FETCH_MODE': 'str', 'MAIL_NEST_API_KEY': 'str', 'MAIL_NEST_PROJECT_CODE': 'str', 'CLOUDFLARE_API_BASE': 'str', 'CLOUDFLARE_API_KEY': 'str', 'CLOUDFLARE_AUTH_MODE': 'str', 'CLOUDFLARE_CUSTOM_AUTH': 'str', 'CLOUDFLARE_PATH_DOMAINS': 'str', 'CLOUDFLARE_PATH_ACCOUNTS': 'str', 'CLOUDFLARE_PATH_TOKEN': 'str', 'CLOUDFLARE_PATH_MESSAGES': 'str', 'CLOUDFLARE_DEFAULT_DOMAINS': 'list_str_multiline', 'CLOUDFLARE_REQUEST_TIMEOUT': 'int', 'CLOUDFLARE_NAME_LENGTH': 'int', 'CLOUDMAIL_API_BASE': 'str', 'CLOUDMAIL_ADMIN_EMAIL': 'str', 'CLOUDMAIL_PASSWORD': 'str', 'CLOUDMAIL_TOKEN_PATH': 'str', 'CLOUDMAIL_AUTH_TOKEN': 'str', 'CLOUDMAIL_DOMAINS': 'list_str_multiline', 'CLOUDMAIL_AUTO_ADD_USER': 'bool', 'CLOUDMAIL_RANDOM_LOCAL_LENGTH': 'int', 'REMAIL_API_BASE': 'str', 'REMAIL_API_KEY': 'str', 'REMAIL_PROJECT_ID': 'int', 'REMAIL_EMAIL_SUFFIX': 'str', 'REMAIL_EMAIL_SUFFIXES': 'str', 'REMAIL_SUFFIX_QUOTA': 'int', 'REMAIL_SERVICE_MODE': 'str', 'REMAIL_SUPPLY_POLICY': 'str', 'REMAIL_ORDER_WAIT_SECONDS': 'int', 'REMAIL_REQUEST_TIMEOUT': 'int', 'MAILTM_API_BASE': 'str', 'MAILTM_DOMAIN': 'str', 'MAILTM_PROXY': 'str', 'MAILTM_NAME_LENGTH': 'int', 'TEMPMAILIO_API_BASE': 'str', 'TEMPMAILIO_DOMAIN': 'str', 'TEMPMAILIO_PROXY': 'str', 'TEMPMAILIO_NAME_LENGTH': 'int'})
+apply_env_overrides(globals(), {'MAIL_TLS_VERIFY': 'bool', 'USE_EMAIL_SERVICE': 'bool', 'OTP_MAX_WAIT': 'int', 'OTP_POLL_INTERVAL': 'int', 'EMAIL_SOURCE': 'str', 'IMAP_MAILBOX': 'str', 'EMAIL_DOMAIN': 'str', 'DUCK_EMAIL_TOKEN': 'str', 'QQ_EMAIL': 'str', 'QQ_IMAP_PASSWORD': 'str', 'GPTMAIL_API_KEY': 'str', 'OUTLOOK_FETCH_MODE': 'str', 'MAIL_NEST_API_KEY': 'str', 'MAIL_NEST_PROJECT_CODE': 'str', 'CLOUDFLARE_API_BASE': 'str', 'CLOUDFLARE_API_KEY': 'str', 'CLOUDFLARE_AUTH_MODE': 'str', 'CLOUDFLARE_CUSTOM_AUTH': 'str', 'CLOUDFLARE_PATH_DOMAINS': 'str', 'CLOUDFLARE_PATH_ACCOUNTS': 'str', 'CLOUDFLARE_PATH_TOKEN': 'str', 'CLOUDFLARE_PATH_MESSAGES': 'str', 'CLOUDFLARE_DEFAULT_DOMAINS': 'list_str_multiline', 'CLOUDFLARE_REQUEST_TIMEOUT': 'int', 'CLOUDFLARE_NAME_LENGTH': 'int', 'CLOUDMAIL_API_BASE': 'str', 'CLOUDMAIL_ADMIN_EMAIL': 'str', 'CLOUDMAIL_PASSWORD': 'str', 'CLOUDMAIL_TOKEN_PATH': 'str', 'CLOUDMAIL_AUTH_TOKEN': 'str', 'CLOUDMAIL_DOMAINS': 'list_str_multiline', 'CLOUDMAIL_AUTO_ADD_USER': 'bool', 'CLOUDMAIL_RANDOM_LOCAL_LENGTH': 'int', 'REMAIL_API_BASE': 'str', 'REMAIL_API_KEY': 'str', 'REMAIL_PROJECT_ID': 'int', 'REMAIL_EMAIL_SUFFIX': 'str', 'REMAIL_EMAIL_SUFFIXES': 'str', 'REMAIL_SUFFIX_QUOTA': 'int', 'REMAIL_SERVICE_MODE': 'str', 'REMAIL_SUPPLY_POLICY': 'str', 'REMAIL_ORDER_WAIT_SECONDS': 'int', 'REMAIL_REQUEST_TIMEOUT': 'int', 'MAILTM_API_BASE': 'str', 'MAILTM_DOMAIN': 'str', 'MAILTM_PROXY': 'str', 'MAILTM_NAME_LENGTH': 'int', 'TEMPMAILIO_API_BASE': 'str', 'TEMPMAILIO_DOMAIN': 'str', 'TEMPMAILIO_PROXY': 'str', 'TEMPMAILIO_NAME_LENGTH': 'int'})

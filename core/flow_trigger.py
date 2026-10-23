@@ -15,6 +15,7 @@ import requests
 
 # 用模块属性方式读 config，支持 WebUI 热加载（config.reload_all()）。
 from config import flow_trigger as _cfg
+from core.tls_policy import verify as tls_verify
 from config.browser import USER_AGENT, ACCEPT_LANGUAGE  # 浏览器指纹固定，不需要热加载
 
 logger = logging.getLogger(__name__)
@@ -66,7 +67,7 @@ def _send_sync(access_token: str) -> dict:
             headers=_build_headers(),
             json=body,
             timeout=_cfg.FLOW_TRIGGER_TIMEOUT,
-            verify=False,
+            verify=tls_verify(),
         )
     except Exception as exc:
         return _flow_result(status="failed", message=f"{type(exc).__name__}: {exc}")
@@ -77,8 +78,8 @@ def _send_sync(access_token: str) -> dict:
     try:
         data = resp.json()
         flow_id = (data.get("flow") or {}).get("flow_id", "")
-    except Exception:
-        pass
+    except Exception as _ignored_exc:
+        logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
 
     if resp.status_code == 200:
         return _flow_result(

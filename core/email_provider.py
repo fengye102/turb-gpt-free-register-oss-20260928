@@ -18,6 +18,8 @@ EMAIL_SOURCE 支持单个或多个来源：
 import logging
 from typing import Iterable
 
+from core.tls_policy import verify as tls_verify
+
 logger = logging.getLogger(__name__)
 
 _VALID_SOURCES = ("outlook", "generic_api", "imap", "cloudflare_domain", "cloudflare", "gptmail", "mailnest", "cloudmail", "remail", "mailtm", "tempmailio")
@@ -176,8 +178,8 @@ def resolve_email_source(email: str) -> str:
         domain = (_email_cfg.EMAIL_DOMAIN or "").lower().strip()
         if domain and domain != "-" and email.lower().endswith("@" + domain):
             return "cloudflare_domain"
-    except Exception:
-        pass
+    except Exception as _ignored_exc:
+        logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
     return parse_email_sources()[0]
 
 
@@ -334,7 +336,7 @@ def fetch_code_direct(email: str, after_ts: float | None = None, timeout: int = 
     deadline = _time.time() + max(5, int(timeout))
     while _time.time() < deadline:
         try:
-            data = requests.get(url, timeout=25, verify=False).json()
+            data = requests.get(url, timeout=25, verify=tls_verify()).json()
             # 这个网关有时候回 **JSON 数组**而不是对象（信箱里有多封匹配邮件时），
             # 直接 .get() 会炸 AttributeError。
             if isinstance(data, list):
@@ -344,8 +346,8 @@ def fetch_code_direct(email: str, after_ts: float | None = None, timeout: int = 
             code = str((data or {}).get("code") or "").strip()
             if code and code != "no_code" and code.isdigit() and len(code) == 6:
                 return code
-        except Exception:
-            pass
+        except Exception as _ignored_exc:
+            logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
         _time.sleep(4 + _random.random() * 4)
     return ""
 

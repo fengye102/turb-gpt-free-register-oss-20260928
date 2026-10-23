@@ -24,6 +24,7 @@ import requests
 from config import email as _email_cfg
 from config import proxy as _proxy_cfg
 from core.otp_utils import extract_otp
+from core.tls_policy import verify as tls_verify
 
 logger = logging.getLogger(__name__)
 
@@ -154,7 +155,7 @@ def _fetch_public_inbox_page_otp(
         api_url,
         headers={**headers, "Accept": "application/json"},
         timeout=20,
-        verify=False,
+        verify=tls_verify(),
     )
     if resp.status_code != 200:
         logger.debug("[GenericAPI] public inbox 页面 API HTTP %s: %s", resp.status_code, (resp.text or "")[:160])
@@ -207,7 +208,7 @@ def _fetch_public_inbox_page_otp(
                     detail_url,
                     headers={**headers, "Accept": "application/json"},
                     timeout=20,
-                    verify=False,
+                    verify=tls_verify(),
                 )
                 if detail_resp.status_code == 200:
                     detail = detail_resp.json()
@@ -354,8 +355,8 @@ def _extract_code(text: str) -> str | None:
     try:
         parsed = json.loads(text)
         candidates_text.insert(0, _decode_data_uri(_flatten_json(parsed)))
-    except Exception:
-        pass
+    except Exception as _ignored_exc:
+        logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
 
     for body in candidates_text:
         # 复用邮件 OTP 抽取逻辑。
@@ -452,8 +453,8 @@ def _parse_yangyang_ts(value: str | None) -> float | None:
     for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S", "%Y-%m-%d %H:%M"):
         try:
             return datetime.strptime(raw[:19], fmt).timestamp()
-        except Exception:
-            pass
+        except Exception as _ignored_exc:
+            logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
     return None
 
 
@@ -480,14 +481,14 @@ def _parse_generic_api_ts(value) -> float | None:
         if dt.tzinfo is None:
             return dt.timestamp()
         return dt.timestamp()
-    except Exception:
-        pass
+    except Exception as _ignored_exc:
+        logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
     # 常见字符串格式
     for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S", "%Y/%m/%d %H:%M:%S", "%Y-%m-%d %H:%M"):
         try:
             return datetime.strptime(raw[:19], fmt).timestamp()
-        except Exception:
-            pass
+        except Exception as _ignored_exc:
+            logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
     return None
 
 
@@ -683,7 +684,7 @@ def _fetch_yangyang_otp(
     # 一般第一页足够；保守支持最多翻 5 页。
     for _ in range(5):
         url = api_url if not cursor else f"{api_url}?cursor={quote(str(cursor), safe='')}"
-        resp = session.get(url, headers={**headers, "Accept": "application/json"}, timeout=20, verify=False)
+        resp = session.get(url, headers={**headers, "Accept": "application/json"}, timeout=20, verify=tls_verify())
         if resp.status_code != 200:
             if resp.status_code == 404:
                 # 兼容 mail.ai1998.xyz 这类同样是 /messages/{token}/{email}，
@@ -721,7 +722,7 @@ def _fetch_yangyang_otp(
             continue
         detail_url = f"{origin}/message/{quote(str(msg_id), safe='')}/{token_q}/{email_q}"
         try:
-            detail_resp = session.get(detail_url, headers={**headers, "Accept": "application/json"}, timeout=20, verify=False)
+            detail_resp = session.get(detail_url, headers={**headers, "Accept": "application/json"}, timeout=20, verify=tls_verify())
             if detail_resp.status_code != 200:
                 continue
             detail = detail_resp.json()
@@ -776,7 +777,7 @@ def _fetch_inline_messages_page_otp(
             code_url,
             headers={**headers, "Accept": "text/html,application/xhtml+xml,text/plain,*/*"},
             timeout=20,
-            verify=False,
+            verify=tls_verify(),
         )
         if resp.status_code != 200:
             logger.debug("[GenericAPI] inline messages 页面 HTTP %s: %s", resp.status_code, (resp.text or "")[:160])
@@ -920,7 +921,7 @@ def _fetch_poll_payload(
     page_result = yy_result or public_result
     if page_result or is_yangyang or public_inbox_api_url:
         return page_result, yy_result, None, ""
-    resp = session.get(poll_url, headers=headers, timeout=20, verify=False)
+    resp = session.get(poll_url, headers=headers, timeout=20, verify=tls_verify())
     return None, None, resp, resp.text or ""
 
 
