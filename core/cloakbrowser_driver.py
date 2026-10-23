@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from config import cloakbrowser as _cfg
+from core import waits
 
 logger = logging.getLogger(__name__)
 
@@ -446,7 +447,7 @@ class CloakSeleniumDriver:
                     logger.debug("[Cloak] %s 第 %s 次等待页面稳定完成", what, attempt)
                 except Exception as settle_exc:
                     logger.debug("[Cloak] %s 等待页面稳定失败：%s", what, str(settle_exc)[:120])
-                time.sleep(min(3.0, self.NAV_RETRY_DELAY * attempt))
+                waits.sleep(waits.backoff_delay(attempt, base=self.NAV_RETRY_DELAY, cap=3.0))
                 logger.info("[Cloak] %s 第 %s 次重试开始：action=%s", what, attempt + 1, getattr(action, "__name__", "call"))
         if last_exc is not None:
             raise last_exc

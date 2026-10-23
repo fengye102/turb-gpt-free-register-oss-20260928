@@ -25,6 +25,7 @@ from config import email as _email_cfg
 from config import proxy as _proxy_cfg
 from core.otp_utils import extract_otp
 from core.tls_policy import verify as tls_verify
+from core import waits
 
 logger = logging.getLogger(__name__)
 
@@ -1167,7 +1168,7 @@ def fetch_latest_otp(
                 f"[GenericAPI] 暂未从取码接口拿到验证码，"
                 f"{interval}s 后重试（剩余 {remaining}s）..."
             )
-        time.sleep(interval)
+        waits.sleep(waits.poll_delay(interval, remaining))
 
     if best_otp:
         logger.warning(f"[GenericAPI] 总超时但已有候选，返回 OTP={best_otp}")

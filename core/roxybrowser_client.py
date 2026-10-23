@@ -15,6 +15,7 @@ from urllib.parse import quote, unquote, urljoin, urlparse
 import requests
 
 from config import roxybrowser as _cfg
+from core import waits
 
 logger = logging.getLogger(__name__)
 
@@ -429,7 +430,7 @@ class RoxyBrowserClient:
                     "[Roxy] API 请求失败，将在 %.1fs 后重试：%s %s attempt=%s/%s error=%s",
                     delay, method_u, path, attempt, max_attempts, exc,
                 )
-                time.sleep(delay)
+                waits.sleep(delay)
         raise last_exc or RuntimeError(f"Roxy API 请求失败 {method_u} {path}")
 
     def try_request(self, method: str, path: str, *, params: dict | None = None, json_body: dict | None = None) -> tuple[bool, dict | str]:

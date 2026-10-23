@@ -11,6 +11,7 @@ import time
 import uuid
 from urllib.parse import urlparse
 from curl_cffi.requests import Session
+from core import waits
 
 from config import (
     USER_AGENT, SEC_CH_UA, SEC_CH_UA_PLATFORM, SEC_CH_UA_MOBILE,
@@ -480,7 +481,7 @@ class BrowserSession:
                     continue
             if attempt < attempts:
                 logger.debug("[指纹] 出口地理探测第 %s 轮未拿到结果，重试", attempt)
-                time.sleep(0.5 * attempt)
+                waits.sleep(waits.backoff_delay(attempt, base=0.5, cap=5))
         # 失败结果**不写缓存**：下一个会话立刻重试，而不是继续沿用默认画像。
         logger.warning("[指纹] 出口地理探测连续 %s 轮失败，本会话只能退回默认地区画像", attempts)
         return {}

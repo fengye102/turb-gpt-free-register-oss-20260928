@@ -13,6 +13,7 @@ from datetime import datetime, timezone
 from config import email as _email_cfg
 from core.otp_utils import extract_otp, looks_like_openai_email
 from core.qqmail_client import _msg_to_dict
+from core import waits
 
 logger = logging.getLogger(__name__)
 _CONTEXT_CACHE: dict[str, "ImapEmailAccount"] = {}
@@ -218,7 +219,7 @@ def fetch_latest_otp(
             break
         if best_otp and settle_until is not None and time.time() >= settle_until:
             return best_otp
-        time.sleep(max(1, interval))
+        waits.sleep(waits.poll_delay(interval, deadline - time.time(), floor=1))
 
     if best_otp:
         return best_otp

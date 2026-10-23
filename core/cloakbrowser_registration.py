@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """通过 CloakBrowser + Playwright 适配层执行 ChatGPT 注册。"""
 from __future__ import annotations
+from core import waits
 
 import logging
 import time
@@ -56,7 +57,7 @@ def _ensure_login_entry_page(driver, attempts: int = 3) -> None:
             _maybe_accept(driver)
         except Exception as _ignored_exc:
             logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
-        time.sleep(1.5)
+        waits.sleep(1.5)
 
 
 def run_cloak_registration(

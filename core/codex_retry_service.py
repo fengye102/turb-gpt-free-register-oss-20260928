@@ -7,6 +7,7 @@ import time
 from pathlib import Path
 
 from core import db
+from core import waits
 
 logger = logging.getLogger(__name__)
 
@@ -138,7 +139,7 @@ def request_stop(email: str) -> dict:
         # 异常注入通常会很快让线程进入 finally/release；若浏览器/CDP/短信等待阻塞导致线程
         # 短时间内仍未退出，延迟清理占位，避免 UI 已显示“已停止”但再次补跑仍 409。
         def _delayed_release() -> None:
-            time.sleep(5)
+            waits.sleep(5)
             with _RETRYING_LOCK:
                 if key in _RETRYING and key in _STOP_REQUESTED:
                     try:

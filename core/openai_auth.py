@@ -14,6 +14,7 @@ from core.sentinel import (
     build_sentinel_request_body,
 )
 from core.sentinel_runner import generate_sentinel_token
+from core import waits
 
 logger = logging.getLogger(__name__)
 
@@ -273,7 +274,7 @@ def network_preflight(session: BrowserSession) -> None:
                     raise
                 backoff = _FOLLOW_AUTH_BACKOFF_BASE ** (attempt - 1)
                 logger.warning(f"[预检] {label} 临时失败：{type(exc).__name__}: {str(exc)[:120]}，{backoff:.1f}s 后重试")
-                time.sleep(backoff)
+                waits.sleep(backoff)
         else:
             raise last_exc if last_exc else RuntimeError(f"[预检] {label} 未完成")
 
@@ -327,7 +328,7 @@ def follow_authorize(session: BrowserSession, authorize_url: str) -> str:
                 f"[步骤4] 临时性网络错误 ({type(exc).__name__}: {str(exc)[:120]})，"
                 f"{backoff:.1f}s 后重试..."
             )
-            time.sleep(backoff)
+            waits.sleep(backoff)
 
     # 三次都失败：抛出最后一次异常
     raise last_exc if last_exc else RuntimeError("步骤4 重试耗尽但无异常记录")

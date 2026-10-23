@@ -3,6 +3,7 @@
 import logging
 import random
 import time
+from core import waits
 
 logger = logging.getLogger(__name__)
 
@@ -33,5 +34,5 @@ def delay(kind: str = "api", *, minimum: float | None = None, maximum: float | N
     hi = max(lo, float(maximum) * factor)
     seconds = random.uniform(lo, hi)
     logger.debug(f"[Humanize] delay kind={kind}, seconds={seconds:.2f}")
-    time.sleep(seconds)
+    waits.sleep(seconds)
     return seconds

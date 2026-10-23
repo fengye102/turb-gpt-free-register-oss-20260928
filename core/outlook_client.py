@@ -47,6 +47,7 @@ from config import (
 # OTP_POLL_INTERVAL / OTP_MAX_WAIT 是 WebUI 可热改的，从模块读
 from config import email as _email_cfg
 from core.otp_utils import looks_like_openai_email, extract_otp
+from core import waits
 
 logger = logging.getLogger(__name__)
 
@@ -1108,7 +1109,7 @@ def fetch_latest_otp(
             logger.info(
                 f"[Outlook] 暂未收到符合条件的 OpenAI 邮件，{interval}s 后重试（剩余 {remaining}s）..."
             )
-        time.sleep(interval)
+        waits.sleep(waits.poll_delay(interval, remaining))
 
     # 超时但已经锁定过候选（settle 没等到结束就到 deadline 了）
     if best_otp:

@@ -11,6 +11,7 @@ import requests
 
 from config import email as _email_cfg
 from core.otp_utils import extract_otp, looks_like_openai_email
+from core import waits
 
 logger = logging.getLogger(__name__)
 
@@ -195,7 +196,7 @@ def fetch_latest_otp(
         remaining = deadline - time.monotonic()
         if remaining <= 0:
             break
-        time.sleep(min(interval, remaining))
+        waits.sleep(waits.poll_delay(interval, remaining))
 
     if best_otp:
         return best_otp

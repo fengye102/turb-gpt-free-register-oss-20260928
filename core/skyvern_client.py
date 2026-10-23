@@ -10,6 +10,7 @@ from typing import Any
 import requests
 
 from config import skyvern as _cfg
+from core import waits
 
 logger = logging.getLogger(__name__)
 
@@ -175,7 +176,7 @@ class SkyvernClient:
         if session_id and not address:
             last = data
             for _ in range(10):
-                time.sleep(1)
+                waits.sleep(1)
                 last = self.get_browser_session(session_id)
                 address = self._browser_address(last)
                 if address:

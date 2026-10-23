@@ -26,6 +26,23 @@ CONVERTED = (
     "core/promo_check.py",
     "core/email_change_service.py",
     "main.py",
+    "core/account_export.py",
+    "core/cloakbrowser_driver.py",
+    "core/cloakbrowser_registration.py",
+    "core/cloudmail_client.py",
+    "core/codex_oauth.py",
+    "core/codex_retry_service.py",
+    "core/generic_api_mail_client.py",
+    "core/gptmail_client.py",
+    "core/humanize.py",
+    "core/imap_mail_client.py",
+    "core/mailnest_client.py",
+    "core/openai_auth.py",
+    "core/outlook_client.py",
+    "core/qqmail_client.py",
+    "core/roxybrowser_client.py",
+    "core/session.py",
+    "core/skyvern_client.py",
 )
 
 

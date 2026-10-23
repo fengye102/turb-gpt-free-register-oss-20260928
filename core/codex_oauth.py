@@ -49,6 +49,7 @@ from core.openai_auth import (
 from core import db
 from core import sms_provider
 from curl_cffi import requests as curl_requests
+from core import waits
 
 logger = logging.getLogger(__name__)
 
@@ -80,7 +81,7 @@ def _with_net_retry(label: str, fn):
                 f"[Codex] {label} 临时性网络错误 ({type(exc).__name__}: {str(exc)[:120]})，"
                 f"{backoff:.1f}s 后重试 (尝试 {attempt}/{_NET_MAX_ATTEMPTS})..."
             )
-            time.sleep(backoff)
+            waits.sleep(backoff)
     raise last_exc if last_exc else RuntimeError(f"[Codex] {label} 重试耗尽但无异常记录")
 
 
@@ -429,7 +430,7 @@ def _submit_sub2_callback(callback_url: str, *, session_id: str = "", redirect_u
                 raise
             delay = base_delay * attempt
             logger.warning("[Codex][sub2] callback 上传失败，将在 %.1fs 后重试：attempt=%s/%s error=%s", delay, attempt, max_attempts, exc)
-            time.sleep(delay)
+            waits.sleep(delay)
     raise RuntimeError(f"[Codex][sub2] callback 上传失败：{last_exc}")
 
 
@@ -671,7 +672,7 @@ def _submit_cpa_callback(callback_url: str) -> dict:
                 "[Codex][CPA] callback 提交失败，将在 %.1fs 后重试：attempt=%s/%s error=%s",
                 delay, attempt, max_attempts, exc
             )
-            time.sleep(delay)
+            waits.sleep(delay)
     raise RuntimeError(f"[Codex][CPA] callback 提交失败：{last_exc}")
 
 
@@ -886,7 +887,7 @@ def _sleep_before_phone_retry(attempt: int, max_retries: int, *, prefix: str = "
         return
     seconds = random.uniform(3.0, 8.0)
     logger.info(f"{prefix} 换号前随机等待 {seconds:.1f} 秒")
-    time.sleep(seconds)
+    waits.sleep(seconds)
 
 
 def _do_phone_verification(session: BrowserSession) -> None:

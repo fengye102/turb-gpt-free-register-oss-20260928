@@ -20,6 +20,7 @@ from pathlib import Path
 
 from config import email as _email_cfg
 from core.otp_utils import looks_like_openai_email, extract_otp
+from core import waits
 
 logger = logging.getLogger(__name__)
 
@@ -386,7 +387,7 @@ def pick_domain_email() -> str:
                     _release_used(email, status="used", note="duck alias already consumed")
                 except Exception as _ignored_exc:
                     logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
-                time.sleep(0.5 * attempt)
+                waits.sleep(waits.backoff_delay(attempt, base=0.5, cap=5))
                 continue
             seen.add(email)
             claim_next_domain_email(email)
@@ -547,7 +548,7 @@ def fetch_latest_otp(
             logger.info(
                 f"[QQMail] 暂未收到 OpenAI 邮件（INBOX+Junk），{interval}s 后重试（剩余 {remaining}s）..."
             )
-        time.sleep(interval)
+        waits.sleep(waits.poll_delay(interval, remaining))
 
     # 超时但有候选
     if best_otp:

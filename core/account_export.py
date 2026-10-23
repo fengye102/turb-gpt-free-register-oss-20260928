@@ -20,6 +20,7 @@ import pyotp
 
 from core.session import BrowserSession
 from core.humanize import delay as human_delay
+from core import waits
 
 logger = logging.getLogger(__name__)
 
@@ -53,7 +54,7 @@ def post_register_dwell(email: str, *, label: str = "注册后") -> None:
     if seconds <= 0:
         return
     logger.info("[%s] 注册成功后随机停留 %.1fs：%s", label, seconds, email)
-    time.sleep(seconds)
+    waits.sleep(seconds)
 
 
 def _account_material_line(email: str, row: dict | None = None) -> str:
