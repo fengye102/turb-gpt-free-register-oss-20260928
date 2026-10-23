@@ -52,7 +52,7 @@ python -m pytest -q                   # 单元测试
 
 ### 继续拆 `app.py` 的规矩
 
-`webui/app.py` 里仍然挤着一百多个 `create_app()` 内的闭包，正在按域往外搬（已经搬完 `pools`）。做法固定，照 `webui/views/pools.py` 抄：
+`webui/app.py` 从 3139 行降到 1650 行左右，已经搬出 `pools`(9) `jobs`(11) `codex`(16) `roxy`(1) `config`(4) 共 41 条路由；剩下 39 条集中在 `/api/accounts*`（账号、查活、提链、Codex Agent），它们和闭包状态交织得最多，放最后。做法固定，照 `webui/views/pools.py` 抄：
 
 1. 挑一个域（例如 `jobs`、`codex`、`config`），确认它的路由不依赖其它闭包；
 2. 整块搬进 `webui/views/<域>.py`，`@app.get` 改成 `@bp.get`，`app.py` 里 `app.register_blueprint(bp)`；
@@ -66,7 +66,7 @@ python -m pytest -q                   # 单元测试
 |---|---|
 | `core/` | 业务实现：SQLite 持久化、注册/授权驱动、邮箱与短信渠道、流量统计 |
 | `config/` | 默认值与 `.env` 覆盖（`config.env_loader`）；WebUI 只写 `.env` |
-| `webui/` | Flask 控制台：`app.py`（装配 + 页面路由）+ `views/`（各域 Blueprint，如 `pools.py`）+ `api_utils.py`（列表/分页/下载缓存等无状态工具）+ `config_editor.py` `auth.py` |
+| `webui/` | Flask 控制台。`app.py` 只做装配 + 剩下的账号路由；`views/` 按域放 Blueprint（`pools` `jobs` `codex` `roxy` `config`）；`api_utils.py` 放列表/分页/下载缓存等无状态工具；`config_editor.py` `auth.py` 各司其职 |
 | `tools/` | 独立脚本：代理桥、cookie 落盘、环境守卫（`check_imports.py`）等 |
 | `sentinel/` | Node 侧 Sentinel 运行时（`sentinel-runner.js` + 环境画像数据） |
 | `tests/` | pytest 用例；`conftest.py` 会把 SQLite 指到临时目录，不碰真实库 |

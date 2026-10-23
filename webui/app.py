@@ -2,10 +2,10 @@
 """
 Flask 本地控制台。
 
-复用现有后端：
-    core.db                     —— 账号 / 邮箱池 / 任务的 SQLite 持久化与查询
-    core.registration_service   —— 线程池批量注册 + 任务日志
-    webui.config_editor         —— 安全读写 config/*.py
+职责只剩「装配」：
+    1. 建 Flask app、挂安全头与 gzip；
+    2. 注册各域 Blueprint（webui/views/*.py）；
+    3. 保留尚未拆走的账号相关路由（/api/accounts*）。
 
 所有接口返回 JSON；前端是单文件 templates/index.html（原生 JS + fetch）。
 默认绑定 127.0.0.1，仅本地访问。
@@ -17,14 +17,12 @@ import os
 import socket
 import subprocess
 import sys
-import threading
 from pathlib import Path
 from urllib.parse import urlparse
 
 from flask import Flask, Response, jsonify, make_response, render_template, request
-import pyotp
 
-from core import (codex_retry_service, db, plan_check_service, codex_agent_service, live_check_service)
+from core import db, plan_check_service, codex_agent_service, live_check_service
 from webui.api_utils import (
     POOL_SOURCE_VALUES,
     PreparedDownloads,
@@ -39,11 +37,11 @@ from webui.api_utils import (
     with_pool_source,
 )
 from webui.auth import init_auth, register_auth_routes
-from webui.views import pools as views_pools
-from webui.views import jobs as views_jobs
 from webui.views import codex as views_codex
-from core import registration_service as svc
-from webui import config_editor
+from webui.views import config as views_settings
+from webui.views import jobs as views_jobs
+from webui.views import pools as views_pools
+from webui.views import roxy as views_roxy
 
 logger = logging.getLogger(__name__)
 
@@ -111,6 +109,9 @@ def create_app(auth_code: str | None = None) -> Flask:
     app.register_blueprint(views_pools.bp)
     app.register_blueprint(views_jobs.bp)
     app.register_blueprint(views_codex.bp)
+
+    app.register_blueprint(views_roxy.bp)
+    app.register_blueprint(views_settings.bp)
 
     @app.after_request
     def _security_headers(response: Response):
@@ -1646,149 +1647,5 @@ def create_app(auth_code: str | None = None) -> Flask:
         data["email"] = acc.get("email")
         data["running"] = bool(data.get("running") or str(acc.get("email_change_status") or "") in {"queued", "running"})
         return jsonify(data)
-
-    # ----------------------------------------------------------
-    # RoxyBrowser 辅助接口
-    # ----------------------------------------------------------
-    @app.get("/api/roxy/workspaces")
-    def api_roxy_workspaces():
-        try:
-            from core.roxybrowser_client import RoxyBrowserClient
-            result = RoxyBrowserClient().list_workspaces()
-            return jsonify(result)
-        except Exception as exc:
-            logger.exception("获取 Roxy 团队/工作区失败")
-            return jsonify({"ok": False, "error": f"{type(exc).__name__}: {exc}"}), 500
-
-    # ----------------------------------------------------------
-    # 配置读写
-    # ----------------------------------------------------------
-    @app.get("/api/config")
-    def api_config_get():
-        return jsonify(config_editor.get_config())
-
-    @app.post("/api/cloudmail/gen-token")
-    def api_cloudmail_gen_token():
-        """手动生成 CloudMail Authorization Token，并把本次填写的 CloudMail 配置一并写入 .env。"""
-        data = request.get_json(silent=True) or {}
-        try:
-            from core.cloudmail_client import gen_token
-            from config.env_loader import write_env_values
-
-            api_base = (data.get("api_base") or "").strip()
-            admin_email = (data.get("email") or data.get("admin_email") or "").strip()
-            password = (data.get("password") or "").strip()
-            path = (data.get("path") or "/api/public/genToken").strip() or "/api/public/genToken"
-            token = gen_token(
-                email=admin_email,
-                password=password,
-                path=path,
-                base_url=api_base,
-            )
-            updates = {"CLOUDMAIL_AUTH_TOKEN": token}
-            # 生成 Token 时用户通常尚未点“保存配置”；这里同步保存本次填写的字段，
-            # 避免 loadConfig() 后 API 地址/账号/密码被旧 .env 值覆盖。
-            if api_base:
-                updates["CLOUDMAIL_API_BASE"] = api_base
-            if admin_email:
-                updates["CLOUDMAIL_ADMIN_EMAIL"] = admin_email
-            if password:
-                updates["CLOUDMAIL_PASSWORD"] = password
-            if path:
-                updates["CLOUDMAIL_TOKEN_PATH"] = path
-            written = write_env_values(updates)
-            try:
-                import config as _config_pkg
-                _config_pkg.reload_all()
-            except Exception:
-                logger.exception("CloudMail Token 写入后热加载失败")
-            return jsonify({
-                "ok": True,
-                "token": token,
-                "written": written,
-                "message": "CloudMail Token 已生成，且当前 CloudMail 配置已保存",
-            })
-        except Exception as exc:
-            logger.exception("生成 CloudMail Token 失败")
-            return jsonify({"ok": False, "error": f"{type(exc).__name__}: {exc}"}), 400
-
-    @app.post("/api/cloudmail/domains")
-    def api_cloudmail_domains():
-        """从 CloudMail 平台获取域名列表，并可写入 .env 作为本地缓存。"""
-        data = request.get_json(silent=True) or {}
-        try:
-            from core.cloudmail_client import fetch_domains
-            from config.env_loader import write_env_values
-
-            updates = {}
-            api_base = (data.get("api_base") or "").strip()
-            admin_email = (data.get("email") or data.get("admin_email") or "").strip()
-            password = (data.get("password") or "").strip()
-            token = (data.get("token") or "").strip()
-            if api_base:
-                updates["CLOUDMAIL_API_BASE"] = api_base
-            if admin_email:
-                updates["CLOUDMAIL_ADMIN_EMAIL"] = admin_email
-            if password:
-                updates["CLOUDMAIL_PASSWORD"] = password
-            if token:
-                updates["CLOUDMAIL_AUTH_TOKEN"] = token
-            if updates:
-                write_env_values(updates)
-                import config as _config_pkg
-                _config_pkg.reload_all()
-
-            domains = fetch_domains(force=True)
-            written = write_env_values({"CLOUDMAIL_DOMAINS": "\n".join(domains)})
-            try:
-                import config as _config_pkg
-                _config_pkg.reload_all()
-            except Exception:
-                logger.exception("CloudMail 域名写入后热加载失败")
-            return jsonify({
-                "ok": True,
-                "domains": domains,
-                "count": len(domains),
-                "written": written,
-                "message": f"已获取 {len(domains)} 个 CloudMail 可用域名并保存",
-            })
-        except Exception as exc:
-            logger.exception("获取 CloudMail 域名失败")
-            return jsonify({"ok": False, "error": f"{type(exc).__name__}: {exc}"}), 400
-
-    @app.post("/api/config")
-    def api_config_set():
-        data = request.get_json(silent=True) or {}
-        updates = data.get("updates") if isinstance(data.get("updates"), dict) else data
-        if not isinstance(updates, dict) or not updates:
-            return jsonify({"ok": False, "error": "无更新内容"}), 400
-        try:
-            result = config_editor.update_config(updates)
-        except Exception as exc:
-            logger.exception("配置写入失败")
-            return jsonify({"ok": False, "error": f"{type(exc).__name__}: {exc}"}), 500
-
-        # 写盘成功后立即热加载所有 config 子模块，让运行时代码看到新值。
-        reload_ok = True
-        reload_err = ""
-        try:
-            import config as _config_pkg
-            _config_pkg.reload_all()
-        except Exception as exc:
-            reload_ok = False
-            reload_err = f"{type(exc).__name__}: {exc}"
-            logger.exception("配置热加载失败")
-
-        return jsonify({
-            "ok": True,
-            "updated": result["updated"],
-            "ignored": result["ignored"],
-            "reloaded": reload_ok,
-            "note": (
-                "✅ 已保存并热加载，新值立即生效"
-                if reload_ok
-                else f"⚠️ 已写入文件但热加载失败（{reload_err}），需重启 Web 服务才能生效"
-            ),
-        })
 
     return app
