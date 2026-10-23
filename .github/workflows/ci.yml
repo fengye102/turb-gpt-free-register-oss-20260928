@@ -1,0 +1,39 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  checks:
+    name: ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: 安装依赖
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest
+
+      - name: 语法编译
+        run: python -m compileall -q core config webui tools main.py web.py
+
+      - name: 内部引用完整性
+        run: python tools/check_imports.py
+
+      - name: .env.example 是否同步
+        run: python tools/gen_env_example.py --check
+
+      - name: 单元测试
+        run: python -m pytest -q

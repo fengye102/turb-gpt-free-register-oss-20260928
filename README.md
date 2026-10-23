@@ -28,6 +28,40 @@ python web.py
 
 项目会把运行配置和结果留在本机。邮箱池、代理凭据、账号数据库、浏览器资料、日志和导出文件都属于自己的运行数据，别提交进仓库。`.gitignore` 已经挡住了常见的数据文件，但提交前扫一眼总没坏处——Git 不会因为文件名看起来无辜就替你保密。
 
+其中两份文件要特别注意：`turb.sqlite3` 里的 `access_token`、`refresh_token`、`totp_secret`、cookie 都是**明文**，`.env` 里的代理、接码、CPA、Sub2API 凭据同样是明文。它们等同于私钥——别放共享盘、别截图发群、别打进压缩包。本项目不做本地加密，安全性靠你自己把这两份文件的权限管住。
+
+## 几个容易踩的点
+
+- **TLS 校验默认开着。** 邮箱取码、flow 触发这些自建网关以前是写死 `verify=False` 的，现在统一走 `config.email.MAIL_TLS_VERIFY`（默认 True）。真碰到只认自签证书的网关，在 `.env` 里设 `MAIL_TLS_VERIFY=False` 显式关掉——那等于把验证码通道摊开给中间人，日志里会打一条 warning 提醒你。
+- **「零元提链」是可拆卸组件。** `core/upi_zero_web_service.py` 与 `core/upi_live_feed.py` 不在本源码分发里；缺件时 WebUI 照常启动，相关的 `/api/upi-zero/*` 接口返回 503 并说明缺哪个文件，而不是整个页面起不来。
+- **WebUI 只认本机。** 默认绑 `127.0.0.1`，授权码可以用 `.env` 的 `WEBUI_AUTH_CODE` 固定下来；不填就每次启动生成临时码并打印在日志里，重启即失效。用 `--host 0.0.0.0` 暴露到局域网之前先想清楚，这工具手里握着的是账号明文。
+
+## 自检与测试
+
+改完代码提交前，三件事跑一遍就够了：
+
+```powershell
+python tools/check_imports.py         # core/config/webui/tools 里的引用是否都能落地
+python tools/gen_env_example.py       # 重新生成 .env.example（改过配置白名单就要跑）
+python -m pytest -q                   # 单元测试
+```
+
+`tools/check_imports.py` 值得单独说一句：清理源码分发时最容易犯的错不是忘了删文件，而是删了模块但调用点还在——`core/upi_live_feed.py`、`core/mailcom_client.py`、`tools/export_session_cookies.py` 都这么悬空过，其中第一个直接让 `python web.py` 起不来。这个脚本被 `tests/test_imports.py` 调用，CI 里也会跑。
+
+`.github/workflows/ci.yml` 在 push / PR 时于 Ubuntu 与 Windows 上执行：语法编译、引用完整性、`.env.example` 同步、pytest。
+
+### 目录约定
+
+| 目录 | 放什么 |
+|---|---|
+| `core/` | 业务实现：SQLite 持久化、注册/授权驱动、邮箱与短信渠道、流量统计 |
+| `config/` | 默认值与 `.env` 覆盖（`config.env_loader`）；WebUI 只写 `.env` |
+| `webui/` | Flask 控制台：`app.py` 路由 + `config_editor.py` 配置读写 + `auth.py` 授权 |
+| `tools/` | 独立脚本：代理桥、cookie 落盘、环境守卫（`check_imports.py`）等 |
+| `sentinel/` | Node 侧 Sentinel 运行时（`sentinel-runner.js` + 环境画像数据） |
+| `tests/` | pytest 用例；`conftest.py` 会把 SQLite 指到临时目录，不碰真实库 |
+| `vendor/gpt-register-tool/协议` | 上游协议注册组件，保留其原许可证 |
+
 ## 来源与许可
 
 主项目基于 [xiaoguzuiniu/gpt-free-register](https://github.com/xiaoguzuiniu/gpt-free-register) 改造，按 MIT License 发布，见 [LICENSE](LICENSE)。`vendor/gpt-register-tool/协议` 里的组件保留各自上游的许可证和版权说明，使用前也记得看一眼。
