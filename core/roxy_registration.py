@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """通过 RoxyBrowser 指纹浏览器 + Selenium 执行 ChatGPT 注册。"""
 from __future__ import annotations
+from core import waits
 
 import json
 import logging
@@ -155,7 +156,7 @@ def _safe_get(driver, url: str, *, timeout: int = 45, attempts: int = 2, accept_
                 driver.execute_script("window.stop();")
             except Exception as _ignored_exc:
                 logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
-            time.sleep(1.0)
+            waits.sleep(1.0)
             try:
                 current = str(driver.current_url or "").lower()
             except Exception:
@@ -178,13 +179,13 @@ def _safe_get(driver, url: str, *, timeout: int = 45, attempts: int = 2, accept_
                     driver.get("about:blank")
                 except Exception as _ignored_exc:
                     logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
-                time.sleep(1.5 * attempt)
+                waits.sleep(waits.backoff_delay(attempt))
                 continue
         except WebDriverException as exc:
             last_exc = exc
             if attempt < attempts:
                 logger.warning("%s 页面跳转失败，准备重试：url=%s attempt=%s/%s error=%s", _log_prefix(driver), url, attempt, attempts, exc)
-                time.sleep(1.5 * attempt)
+                waits.sleep(waits.backoff_delay(attempt))
                 continue
             raise
         finally:
@@ -244,10 +245,10 @@ def _human_scroll_to(driver, el) -> None:
         block = random.choice(["center", "nearest", "center"])
         driver.execute_script("arguments[0].scrollIntoView({block: arguments[1], inline:'nearest'});", el, block)
         if _browser_actions_enabled():
-            time.sleep(random.uniform(0.08, 0.35))
+            waits.sleep(random.uniform(0.08, 0.35))
             # 轻微滚动抖动，避免每次都精准居中。
             driver.execute_script("window.scrollBy(0, arguments[0]);", random.randint(-90, 90))
-            time.sleep(random.uniform(0.05, 0.22))
+            waits.sleep(random.uniform(0.05, 0.22))
             driver.execute_script("arguments[0].scrollIntoView({block:'center', inline:'nearest'});", el)
     except Exception:
         try:
@@ -264,7 +265,7 @@ def _human_click(driver, el, *, label: str = "") -> None:
     """
     _human_scroll_to(driver, el)
     if not _browser_actions_enabled():
-        time.sleep(0.2)
+        waits.sleep(0.2)
         el.click()
         return
     try:
@@ -280,9 +281,9 @@ def _human_click(driver, el, *, label: str = "") -> None:
         y = float(point.get("y") or 0)
         if hasattr(driver, "execute_cdp_cmd") and x > 0 and y > 0:
             driver.execute_cdp_cmd("Input.dispatchMouseEvent", {"type": "mouseMoved", "x": x, "y": y})
-            time.sleep(random.uniform(0.05, 0.22))
+            waits.sleep(random.uniform(0.05, 0.22))
             driver.execute_cdp_cmd("Input.dispatchMouseEvent", {"type": "mousePressed", "x": x, "y": y, "button": "left", "clickCount": 1})
-            time.sleep(random.uniform(0.035, 0.13))
+            waits.sleep(random.uniform(0.035, 0.13))
             driver.execute_cdp_cmd("Input.dispatchMouseEvent", {"type": "mouseReleased", "x": x, "y": y, "button": "left", "clickCount": 1})
         else:
             driver.execute_script(r"""
@@ -294,7 +295,7 @@ def _human_click(driver, el, *, label: str = "") -> None:
             """, el)
     except Exception as exc:
         logger.debug("%s 人工化点击失败，回退 el.click label=%s err=%s", _log_prefix(driver), label, exc)
-        time.sleep(random.uniform(0.12, 0.45))
+        waits.sleep(random.uniform(0.12, 0.45))
         try:
             driver.execute_script("arguments[0].click();", el)
         except Exception:
@@ -328,7 +329,7 @@ def _human_type_text(driver, el, value: str, *, clear: bool = True) -> None:
                 logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
             try:
                 el.send_keys(mod, "a")
-                time.sleep(random.uniform(0.04, 0.16))
+                waits.sleep(random.uniform(0.04, 0.16))
                 el.send_keys(Keys.BACKSPACE)
             except Exception:
                 try:
@@ -385,7 +386,7 @@ def _find_any(driver, selectors: list[str], timeout: int | None = None):
                         return item
             except Exception as exc:
                 last = exc
-        time.sleep(0.4)
+        waits.sleep(waits.poll_delay(0.4, end - time.time()))
     raise RuntimeError(f"找不到页面元素: {selectors}; last={last}")
 
 
@@ -548,10 +549,10 @@ def _wait_for_email_input(driver, timeout: int | None = None):
         last_state = _email_entry_state(driver)
         if not clicked_email_option and _click_email_entry_option(driver):
             clicked_email_option = True
-            time.sleep(1.0)
+            waits.sleep(waits.poll_delay(1.0, end - time.time()))
             _assert_not_external_idp(driver, "点击邮箱入口后")
             continue
-        time.sleep(0.4)
+        waits.sleep(waits.poll_delay(0.4, end - time.time()))
     raise RuntimeError(f"找不到邮箱输入框/邮箱入口（未使用文字识别），state={last_state}")
 
 
@@ -637,7 +638,7 @@ def _submit_nearest_form_for_active_input(driver) -> bool:
             logger.warning("%s 邮箱提交未返回目标元素，回退 requestSubmit", _log_prefix(driver))
             driver.execute_script("document.querySelector('form')?.requestSubmit?.();")
         logger.info("%s 邮箱表单安全提交：%s", _log_prefix(driver), result)
-        time.sleep(0.8)
+        waits.sleep(0.8)
         _assert_not_external_idp(driver, "提交邮箱后")
         return True
     logger.warning("%s 未执行邮箱提交：%s", _log_prefix(driver), result)
@@ -794,12 +795,12 @@ def _submit_email_step(driver, email: str | None = None) -> None:
     email_value = str(email or _current_email_input_value(driver) or "").strip()
     stable = _stabilize_email_input_before_submit(driver, email_value)
     logger.info("%s 邮箱提交前状态稳定：%s", _log_prefix(driver), stable)
-    time.sleep(random.uniform(0.8, 1.8) if _browser_actions_enabled() else 0.4)
+    waits.sleep(random.uniform(0.8, 1.8) if _browser_actions_enabled() else 0.4)
 
     stable_submit = _submit_email_form_stable(driver, email_value)
     if stable_submit.get("ok"):
         logger.info("%s 邮箱稳定表单提交：%s", _log_prefix(driver), stable_submit)
-        time.sleep(1.0)
+        waits.sleep(1.0)
         _assert_not_external_idp(driver, "稳定表单提交邮箱后")
         return
     logger.warning("%s 邮箱稳定表单提交失败，回退 UI 点击提交：%s", _log_prefix(driver), stable_submit)
@@ -1036,7 +1037,7 @@ def _wait_email_submit_next_state(driver, email: str, timeout: int = 18) -> str:
                     _log_prefix(driver),
                 )
             cleared_seen_at = None
-            time.sleep(0.8)
+            waits.sleep(waits.poll_delay(0.8, end - time.time()))
             continue
         state = _email_input_value_state(driver)
         last = state
@@ -1072,7 +1073,7 @@ def _wait_email_submit_next_state(driver, email: str, timeout: int = 18) -> str:
             else:
                 cleared_seen_at = None
             # 仍是当前邮箱页，继续短等。
-        time.sleep(0.8)
+        waits.sleep(waits.poll_delay(0.8, end - time.time()))
     logger.info("%s 邮箱提交后等待下一步超时，最后邮箱页状态=%s", _log_prefix(driver), last)
     return "email_page" if _is_email_login_page_still_present(driver) else "unknown"
 
@@ -1104,7 +1105,7 @@ def _submit_email_and_wait_next(
         values = [str(i.get("value") or "") for i in (state.get("inputs") or [])]
         if not any(v.strip().lower() == current_email.lower() for v in values):
             logger.warning("%s 邮箱写入校验失败，准备重试：attempt=%s/%s state=%s", _log_prefix(driver), attempt, attempts, state)
-            time.sleep(0.8)
+            waits.sleep(0.8)
             continue
         logger.info("%s 已填写邮箱并校验通过：%s", _log_prefix(driver), current_email)
         human_delay("form")
@@ -1124,7 +1125,7 @@ def _submit_email_and_wait_next(
             logger.info("%s 邮箱提交后已进入下一步：%s", _log_prefix(driver), state_name)
             return state_name
         logger.warning("%s 邮箱提交后仍未进入下一步：%s，准备重填重试 state=%s", _log_prefix(driver), state_name, _email_input_value_state(driver))
-        time.sleep(1.0)
+        waits.sleep(1.0)
     raise RuntimeError(f"邮箱提交后未进入密码页/验证码页，最后状态={last_state}")
 
 
@@ -1197,14 +1198,14 @@ def _type_otp(driver, code: str, timeout: int | None = None) -> None:
             for e, ch in zip(numeric_boxes, code):
                 if _browser_actions_enabled():
                     _human_scroll_to(driver, e)
-                    time.sleep(random.uniform(0.04, 0.18))
+                    waits.sleep(waits.poll_delay(random.uniform(0.04, 0.18), deadline - time.time()))
                 e.send_keys(ch)
                 if _browser_actions_enabled():
                     human_delay("keystroke")
             return
 
         last_state = _email_otp_page_state(driver)
-        time.sleep(0.5)
+        waits.sleep(waits.poll_delay(0.5, deadline - time.time()))
 
     raise RuntimeError(f"找不到 OTP 输入框（等待 {timeout or OTP_INPUT_WAIT_SECONDS}s）state={last_state}")
 
@@ -1292,11 +1293,11 @@ def _click_resend_email_otp(driver, timeout: int = 20) -> dict:
                 text = str(btn.text or btn.get_attribute('value') or btn.get_attribute('data-dd-action-name') or '').strip()
                 _human_click(driver, btn, label="resend_otp")
                 logger.info("%s[OTP] 已点击重新发送验证码按钮：%s", _log_prefix(driver), text or '-')
-                time.sleep(random.uniform(1.1, 2.4) if _browser_actions_enabled() else 1.5)
+                waits.sleep(waits.poll_delay(random.uniform(1.1, 2.4) if _browser_actions_enabled() else 1.5, end - time.time()))
                 return {"ok": True, "text": text}
         except Exception as exc:
             last = exc
-        time.sleep(0.5)
+        waits.sleep(waits.poll_delay(0.5, end - time.time()))
     raise RuntimeError(f"找不到可点击的重新发送验证码按钮: last={last}, state={_email_otp_page_state(driver)}")
 
 
@@ -1310,7 +1311,7 @@ def _wait_after_email_otp_submit(driver, timeout: int = 30) -> str:
     end = time.time() + timeout
     last = {}
     while time.time() < end:
-        time.sleep(0.5)
+        waits.sleep(waits.poll_delay(0.5, end - time.time()))
         if not _is_email_verification_page(driver):
             return 'accepted'
         last = _email_otp_page_state(driver)
@@ -1361,7 +1362,7 @@ def _maybe_accept(driver) -> None:
     ],):
         try:
             _click_any(driver, selectors, timeout=3)
-            time.sleep(0.5)
+            waits.sleep(0.5)
         except Exception as _ignored_exc:
             logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
 
@@ -1619,11 +1620,11 @@ def _fill_birthday_or_age(driver, birthday: str, age: int) -> str | None:
         ]:
             el = driver.find_element(By.CSS_SELECTOR, selector)
             driver.execute_script("arguments[0].scrollIntoView({block:'center'}); arguments[0].focus();", el)
-            time.sleep(0.1)
+            waits.sleep(0.1)
             el.send_keys(mod, 'a')
-            time.sleep(0.05)
+            waits.sleep(0.05)
             el.send_keys(str(value))
-            time.sleep(0.1)
+            waits.sleep(0.1)
             driver.execute_script("arguments[0].dispatchEvent(new Event('input', {bubbles:true})); arguments[0].dispatchEvent(new Event('change', {bubbles:true})); arguments[0].blur();", el)
         driver.execute_script(r"""
         const hidden = document.querySelector('input[name="birthday"]');
@@ -1925,22 +1926,22 @@ def _fill_password_page_if_present(driver, email: str, timeout: int = 25) -> str
                         retry = _click_continue_with_password_if_present(driver)
                         if retry.get("ok"):
                             hop_clicked_at = time.time()
-                    time.sleep(0.5)
+                    waits.sleep(waits.poll_delay(0.5, end - time.time()))
                     continue
                 if time.time() - hop_clicked_at >= 6.0:
                     logger.info("%s 点击“使用密码继续”后仍停在验证码页，交给 OTP 阶段", _log_prefix(driver))
                     return None
-                time.sleep(0.5)
+                waits.sleep(waits.poll_delay(0.5, end - time.time()))
                 continue
             result = _click_continue_with_password_if_present(driver)
             if result.get("ok"):
                 hop_clicked_at = time.time()
                 logger.info("%s 邮箱验证码页已点击“使用密码继续”：email=%s detail=%s", _log_prefix(driver), email, result)
-                time.sleep(0.8)
+                waits.sleep(waits.poll_delay(0.8, end - time.time()))
                 continue
             if "stale" in str(result.get("reason") or "").lower():
                 # 页面正在跳转，stale element 不代表按钮不存在，继续观察。
-                time.sleep(0.5)
+                waits.sleep(waits.poll_delay(0.5, end - time.time()))
                 continue
             logger.info("%s 已在邮箱验证码页，但未找到“使用密码继续”按钮：detail=%s", _log_prefix(driver), result)
             return None
@@ -1950,7 +1951,7 @@ def _fill_password_page_if_present(driver, email: str, timeout: int = 25) -> str
         is_signup_password = _is_signup_password_page(driver)
         is_login_password = _is_login_password_page(driver)
         if not (is_signup_password or is_login_password):
-            time.sleep(0.5)
+            waits.sleep(waits.poll_delay(0.5, end - time.time()))
             continue
         # 落 /create-account/password 时页面同样带“使用一次性验证码注册”入口
         # （name=intent value=passwordless_signup_send_otp）。历史行为是「能走 OTP 就走 OTP」
@@ -1981,7 +1982,7 @@ def _fill_password_page_if_present(driver, email: str, timeout: int = 25) -> str
                 if _has_access_token(driver):
                     logger.info("%s 一次性验证码入口后已检测到登录态", _log_prefix(driver))
                     return None
-                time.sleep(0.5)
+                waits.sleep(waits.poll_delay(0.5, wait_end - time.time()))
             logger.info("%s 已点击一次性验证码入口，未立即检测到 OTP 页，交给后续 OTP 阶段继续处理", _log_prefix(driver))
             return None
         if is_login_password:
@@ -2083,7 +2084,7 @@ def _fill_password_page_if_present(driver, email: str, timeout: int = 25) -> str
                         logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
             if not _is_signup_password_page(driver):
                 return password
-            time.sleep(0.5)
+            waits.sleep(waits.poll_delay(0.5, wait_end - time.time()))
         return password
     logger.info("%s 未检测到密码页，继续后续流程 last=%s", _log_prefix(driver), last)
     return None
@@ -2155,7 +2156,7 @@ def _complete_profile_page(driver, name: str, birthday: str, timeout: int = 45) 
     age = today.year - int(y) - ((today.month, today.day) < (int(m), int(d)))
     last_snapshot = {}
     while time.time() < end:
-        time.sleep(1)
+        waits.sleep(waits.poll_delay(1, end - time.time()))
         if _has_access_token(driver):
             logger.info('%s 已检测到登录态，资料页可能已跳过', _log_prefix(driver))
             return False
@@ -2203,7 +2204,7 @@ def _complete_profile_page(driver, name: str, birthday: str, timeout: int = 45) 
             if _click_if_enabled_submit(driver):
                 logger.info('%s 已点击资料页提交按钮，等待 OAuth 跳转', _log_prefix(driver))
                 return True
-            time.sleep(1)
+            waits.sleep(waits.poll_delay(1, end - time.time()))
         logger.warning('%s 找不到可点击的资料页提交按钮 snapshot=%s', _log_prefix(driver), _page_snapshot(driver))
     raise RuntimeError(f'等待/填写资料页超时，最后页面：{last_snapshot}')
 
@@ -2320,12 +2321,12 @@ def _fetch_chatgpt_session(driver, timeout: int = 90, auto_jump_wait: int = 15) 
                     logger.info("%s 未在 %ss 内观察到当前窗口跳转 chatgpt.com，主动打开 ChatGPT 内读取 session", _log_prefix(driver), int(auto_jump_wait or 15))
                     _safe_get(driver, "https://chatgpt.com/", timeout=35, attempts=2, accept_hosts=("chatgpt.com",))
                     forced_chatgpt_open = True
-                    time.sleep(3)
+                    waits.sleep(waits.poll_delay(3, end - time.time()))
                     current = str(getattr(driver, "current_url", "") or "")
                 except Exception as exc:
                     last_data = f"{type(exc).__name__}: {exc}"
             else:
-                time.sleep(1)
+                waits.sleep(waits.poll_delay(1, end - time.time()))
                 continue
 
         if 'chatgpt.com' in current:
@@ -2336,7 +2337,7 @@ def _fetch_chatgpt_session(driver, timeout: int = 90, auto_jump_wait: int = 15) 
                 last_data = "session 暂无 accessToken"
             except Exception as exc:
                 last_data = f"{type(exc).__name__}: {exc}"
-        time.sleep(2)
+        waits.sleep(waits.poll_delay(2, end - time.time()))
 
     raise RuntimeError(f"等待 /api/auth/session accessToken 超时，最后响应: {str(last_data)[:800]}")
 

@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """通过 Browser Use Cloud + Playwright 执行 Codex OAuth 授权。"""
 from __future__ import annotations
+from core import waits
 
 import logging
 import threading
@@ -70,7 +71,7 @@ def _bu_delay(kind: str, seconds: float | None = None) -> None:
                 "post_auth": 0.2,
             }.get(kind, 0.1)
         if seconds > 0:
-            time.sleep(seconds)
+            waits.sleep(seconds)
         return
     human_delay(kind)
 
@@ -163,7 +164,7 @@ def _wait_for_callback(context, page, timeout: int | None = None) -> str:
                 return callback
         except Exception as _ignored_exc:
             logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
-        time.sleep(0.25 if _fast_mode() else 0.5)
+        waits.sleep(waits.poll_delay(0.25 if _fast_mode() else 0.5, end - time.time()))
     raise RuntimeError(f"等待 Codex callback 超时，最后 URL={last_url}")
 
 
@@ -178,7 +179,7 @@ def _wait_for_fresh_email_otp(otp_provider, email: str, after_ts: float, used_co
             last_code = code
             if code not in used_codes:
                 return code
-        time.sleep(1 if _fast_mode() else 2)
+        waits.sleep(waits.poll_delay(1 if _fast_mode() else 2, end - time.time()))
     if last_code:
         raise RuntimeError(f"等待邮箱 OTP 超时，最后只拿到已使用验证码：{last_code}")
     raise RuntimeError("等待邮箱 OTP 超时")
@@ -217,7 +218,7 @@ def _wait_auth_page_ready(page, timeout: int = 8) -> None:
                     logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
         except Exception as _ignored_exc:
             logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
-        time.sleep(0.25 if _fast_mode() else 0.6)
+        waits.sleep(waits.poll_delay(0.25 if _fast_mode() else 0.6, end - time.time()))
     logger.warning("[Codex][BrowserUse] 登录页等待渲染超时，最后 URL=%s", last_url or "-")
 
 
@@ -250,7 +251,7 @@ def _click_first_any_frame(page, selectors: list[str], timeout_ms: int = 5000) -
                     return True
                 except Exception as _ignored_exc:
                     logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
-        time.sleep(0.25)
+        waits.sleep(waits.poll_delay(0.25, end - time.time()))
     return False
 
 
@@ -283,7 +284,7 @@ def _fill_first_any_frame(page, selectors: list[str], value: str, timeout_ms: in
                     return True
                 except Exception as exc2:
                     last_err = exc2
-        time.sleep(0.25)
+        waits.sleep(waits.poll_delay(0.25, end - time.time()))
     if last_err:
         logger.debug("[Codex][BrowserUse] fill any-frame failed: %s", last_err)
     return False
@@ -428,7 +429,7 @@ def _fill_email_fast(page, email: str) -> bool:
 def _click_email_entry_if_present(page) -> None:
     # OAuth 登录页在不同地区会先显示“Continue with email/メールで続行”等入口。
     if _click_email_entry_fast(page):
-        time.sleep(0.3)
+        waits.sleep(0.3)
         return
     _click_first_any_frame(
         page,
@@ -529,7 +530,7 @@ def _fill_email_for_codex(page, email: str) -> None:
             ok = _fill_email_fast(page, email) or _fill_first_any_frame(page, selectors, email, timeout_ms=800)
             if ok:
                 break
-            time.sleep(0.25)
+            waits.sleep(waits.poll_delay(0.25, end - time.time()))
     if not ok:
         raise RuntimeError("找不到邮箱输入框；" + _current_state_for_log(page))
 
@@ -615,7 +616,7 @@ def _wait_after_email_submit(page, timeout: int = 45, dead_tracker: dict | None 
             logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
         if any(x in body for x in ("incorrect", "invalid", "expired", "错误", "过期", "无效")):
             return "invalid"
-        time.sleep(0.5)
+        waits.sleep(waits.poll_delay(0.5, end - time.time()))
     return "unknown"
 
 
@@ -648,7 +649,7 @@ def _maybe_click_passwordless_after_email(page, email: str, timeout: int = 18) -
                     continue
         except Exception as exc:
             logger.debug("[Codex][BrowserUse] 密码页一次性验证码入口探测失败：%s", str(exc)[:140])
-        time.sleep(0.4)
+        waits.sleep(waits.poll_delay(0.4, end - time.time()))
     if clicked:
         logger.info("[Codex][BrowserUse] 已点击一次性验证码入口，未立即检测到 OTP 页，继续后续 OTP 轮询")
 
@@ -684,7 +685,7 @@ def _fill_mfa_challenge_if_present(page, email: str, timeout: int = 15) -> bool:
     end = time.time() + timeout
     while time.time() < end:
         if not _looks_mfa_challenge_page(page):
-            time.sleep(0.4)
+            waits.sleep(waits.poll_delay(0.4, end - time.time()))
             continue
         try:
             ok = _fill_first(
@@ -698,9 +699,9 @@ def _fill_mfa_challenge_if_present(page, email: str, timeout: int = 15) -> bool:
                 timeout_ms=5000,
             )
             if not ok:
-                time.sleep(0.4)
+                waits.sleep(waits.poll_delay(0.4, end - time.time()))
                 continue
-            time.sleep(1.2)
+            waits.sleep(waits.poll_delay(1.2, end - time.time()))
             if not _click_first(
                 page,
                 [
@@ -721,11 +722,11 @@ def _fill_mfa_challenge_if_present(page, email: str, timeout: int = 15) -> bool:
             while time.time() < wait_end:
                 if not _looks_mfa_challenge_page(page):
                     return True
-                time.sleep(0.4)
+                waits.sleep(waits.poll_delay(0.4, wait_end - time.time()))
             return True
         except Exception as exc:
             logger.debug("[Codex][BrowserUse] MFA challenge 处理失败：%s", str(exc)[:160])
-            time.sleep(0.5)
+            waits.sleep(waits.poll_delay(0.5, end - time.time()))
     return False
 
 
@@ -744,10 +745,10 @@ def _fill_login_password_if_present(page, email: str, timeout: int = 18) -> str 
         if not _looks_next_step_after_login(page):
             try:
                 if "/log-in/password" not in _page_url(page).lower():
-                    time.sleep(0.4)
+                    waits.sleep(waits.poll_delay(0.4, end - time.time()))
                     continue
             except Exception:
-                time.sleep(0.4)
+                waits.sleep(waits.poll_delay(0.4, end - time.time()))
                 continue
         ok = _fill_first(
             page,
@@ -761,9 +762,9 @@ def _fill_login_password_if_present(page, email: str, timeout: int = 18) -> str 
         )
         if not ok:
             logger.info("[Codex][BrowserUse] 登录密码页未找到输入框，继续等待")
-            time.sleep(0.5)
+            waits.sleep(waits.poll_delay(0.5, end - time.time()))
             continue
-        time.sleep(1.6)
+        waits.sleep(waits.poll_delay(1.6, end - time.time()))
         if not _click_first(
             page,
             [
@@ -795,7 +796,7 @@ def _fill_login_password_if_present(page, email: str, timeout: int = 18) -> str 
                         return "next_step"
                 except Exception:
                     return "next_step"
-            time.sleep(0.5)
+            waits.sleep(waits.poll_delay(0.5, wait_end - time.time()))
         return "next_step"
     return None
 
@@ -876,7 +877,7 @@ def _fill_email_and_otp(page, email: str, otp_provider, auth_url: str, dead_trac
         while time.time() < wait_end and not _looks_email_otp_page(page):
             if any(x in _page_url(page).lower() for x in ("phone", "workspace", "consent", "localhost:1455")):
                 return
-            time.sleep(0.4)
+            waits.sleep(waits.poll_delay(0.4, wait_end - time.time()))
         logger.info("[Codex][BrowserUse] 等待邮箱 OTP：%s（%s/3）", email, attempt)
         _t_otp_wait = _StepTimer("等待邮箱 OTP")
         try:
@@ -1077,7 +1078,7 @@ def _wait_after_phone_send(page, timeout: int = 18) -> str:
         phone_value = _read_phone_input_value(page)
         state = f"url={url} phone_value={phone_value!r} body={_body_snippet(page, 220)!r}"
         last_state = state
-        time.sleep(0.7)
+        waits.sleep(waits.poll_delay(0.7, end - time.time()))
     logger.warning("[Codex][BrowserUse] 提交手机号后未确认进入短信页，最后状态：%s", last_state)
     # 仍然停留在可见手机号输入框，基本就是没发出去/按钮没点中/页面拒绝但未识别。
     if _read_phone_input_value(page):
@@ -1102,7 +1103,7 @@ def _wait_phone_form_ready(page, timeout: int = 12) -> bool:
             timeout_ms=500,
         ) is not None:
             return True
-        time.sleep(0.4)
+        waits.sleep(waits.poll_delay(0.4, end - time.time()))
     return False
 
 
@@ -1110,9 +1111,9 @@ def _dismiss_phone_country_dropdown(page) -> None:
     # OpenAI 的国家码 combobox 有时会保持展开，挡住/吃掉 Continue 点击。
     try:
         page.keyboard.press("Escape")
-        time.sleep(0.15)
+        waits.sleep(0.15)
         page.keyboard.press("Tab")
-        time.sleep(0.15)
+        waits.sleep(0.15)
     except Exception as _ignored_exc:
         logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
     try:
@@ -1252,7 +1253,7 @@ def _wait_phone_code_page(page, timeout: int = 25) -> bool:
             return False
         if _has_visible_phone_code_input(page):
             return True
-        time.sleep(0.5)
+        waits.sleep(waits.poll_delay(0.5, end - time.time()))
     return False
 
 
@@ -1270,7 +1271,7 @@ def _wait_after_phone_otp(page, timeout: int = 25) -> str:
             body = ""
         if any(x in body for x in ("incorrect", "invalid", "expired", "错误", "过期", "无效")):
             return "invalid"
-        time.sleep(0.5)
+        waits.sleep(waits.poll_delay(0.5, end - time.time()))
     return "unknown"
 
 
@@ -1358,7 +1359,7 @@ def _do_phone_verification_if_present(page) -> None:
             break
         if any(x in _page_url(page).lower() for x in ("workspace", "consent", "authorize")):
             return
-        time.sleep(0.5)
+        waits.sleep(waits.poll_delay(0.5, end - time.time()))
     if not _has_phone_prompt(page):
         logger.info("[Codex][BrowserUse] 未检测到手机号验证页，跳过")
         return
@@ -1421,7 +1422,7 @@ def _do_phone_verification_if_present(page) -> None:
                 _ensure_add_phone_form(page, reason=f"after-fail-{attempt}")
             except Exception as _ignored_exc:
                 logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
-            time.sleep(min(1 + attempt, 4))
+            waits.sleep(min(1 + attempt, 4))
     raise RuntimeError(f"手机验证失败，已重试 {max_retries} 次：{last_error}")
 
 
@@ -1449,7 +1450,7 @@ def _finish_consent_workspace(context, page) -> str:
         )
         if clicked:
             _bu_delay("form")
-        time.sleep(0.7)
+        waits.sleep(waits.poll_delay(0.7, end - time.time()))
     return _wait_for_callback(context, page, timeout=5)
 
 

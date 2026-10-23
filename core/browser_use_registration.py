@@ -9,6 +9,7 @@ Browser Use Cloud + Playwright 注册驱动。
   - 默认不做 Codex（需要时可后续再接）
 """
 from __future__ import annotations
+from core import waits
 
 import logging
 import random
@@ -117,7 +118,7 @@ def _bu_delay(kind: str, seconds: float | None = None) -> None:
                 "post_auth": random.uniform(0.6, 1.2),
             }.get(kind, random.uniform(0.15, 0.35))
         if seconds > 0:
-            time.sleep(seconds)
+            waits.sleep(seconds)
         return
     human_delay(kind)
 
@@ -125,9 +126,9 @@ def _bu_delay(kind: str, seconds: float | None = None) -> None:
 def _human_pause(min_s: float = 0.08, max_s: float = 0.28) -> None:
     """Browser Use / Skyvern 始终保留随机停顿，避免毫秒级连贯操作。"""
     try:
-        time.sleep(random.uniform(float(min_s), float(max_s)))
+        waits.sleep(random.uniform(float(min_s), float(max_s)))
     except Exception:
-        time.sleep(0.12)
+        waits.sleep(0.12)
 
 
 def _safe_scroll_locator(loc, *, timeout: int = 1800) -> None:
@@ -383,7 +384,7 @@ def _post_register_dwell(page, context, *, provider_prefix: str, email: str) -> 
             except Exception as _ignored_exc:
                 logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
             last_touch = time.time()
-        time.sleep(random.uniform(0.8, 1.8))
+        waits.sleep(waits.poll_delay(random.uniform(0.8, 1.8), end - time.time()))
 
 
 def _page_url(page) -> str:
@@ -449,7 +450,7 @@ def _fill_first(
                 return True
             except Exception as exc:
                 last_err = exc
-        time.sleep(0.15 if _fast_mode() else 0.3)
+        waits.sleep(waits.poll_delay(0.15 if _fast_mode() else 0.3, end - time.time()))
     if last_err:
         logger.debug("[BrowserUse] fill failed: %s", last_err)
     return False
@@ -465,7 +466,7 @@ def _click_first(page, selectors: list[str], timeout_ms: int | None = None) -> b
                 return True
             except Exception as _ignored_exc:
                 logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
-        time.sleep(0.15 if _fast_mode() else 0.3)
+        waits.sleep(waits.poll_delay(0.15 if _fast_mode() else 0.3, end - time.time()))
     return False
 
 
@@ -854,7 +855,7 @@ def _wait_for_email_input_pw(page, timeout_ms: int | None = None):
                 _assert_not_external_idp(page, "点击邮箱入口后")
                 continue
 
-        time.sleep(0.35 if _fast_mode() else 0.55)
+        waits.sleep(waits.poll_delay(0.35 if _fast_mode() else 0.55, end - time.time()))
 
     raise RuntimeError(f"找不到邮箱输入框/邮箱入口，页面={_page_url(page) or '-'} state={last_state}")
 
@@ -902,7 +903,7 @@ def _wait_after_email_submit_transition(page, context=None, timeout: int = 14) -
             return state
         if "chatgpt.com" in lower and "/auth/" not in lower:
             return "chatgpt"
-        time.sleep(0.25 if _fast_mode() else 0.5)
+        waits.sleep(waits.poll_delay(0.25 if _fast_mode() else 0.5, end - time.time()))
     if "chatgpt.com/auth/login" in last_url.lower():
         return "email_page"
     return last_state
@@ -1197,7 +1198,7 @@ def _fill_password_if_present(page, email: str, timeout: int = 25, context=None)
                 if str(quick.get("state") or "") == "email_verification":
                     if _click_continue_with_password_if_present(page):
                         logger.info("[BrowserUse] 邮箱验证码页已点击“使用密码继续”：url=%s", quick.get("url") or _page_url(page) or "-")
-                        time.sleep(0.4 if _fast_mode() else 1.0)
+                        waits.sleep(waits.poll_delay(0.4 if _fast_mode() else 1.0, end - time.time()))
                         continue
                     logger.info("[BrowserUse] 已在邮箱验证码页，但未找到“使用密码继续”按钮，继续等待密码页：url=%s", quick.get("url") or _page_url(page) or "-")
         except Exception as _ignored_exc:
@@ -1210,7 +1211,7 @@ def _fill_password_if_present(page, email: str, timeout: int = 25, context=None)
                     raise
                 if _is_transient_navigation_error(exc):
                     logger.info("[BrowserUse] 密码页检测遇到页面跳转，稍后重试：%s", str(exc)[:140])
-                    time.sleep(0.4 if _fast_mode() else 1.0)
+                    waits.sleep(waits.poll_delay(0.4 if _fast_mode() else 1.0, end - time.time()))
                     continue
                 raise
             last_heartbeat = time.time()
@@ -1222,17 +1223,17 @@ def _fill_password_if_present(page, email: str, timeout: int = 25, context=None)
         if state == "email_verification" and not _is_signup_password_page(page):
             if _click_continue_with_password_if_present(page):
                 logger.info("[BrowserUse] 邮箱验证码页已点击“使用密码继续”：email=%s", email)
-                time.sleep(0.4 if _fast_mode() else 1.0)
+                waits.sleep(waits.poll_delay(0.4 if _fast_mode() else 1.0, end - time.time()))
                 continue
             try:
                 logger.info("[BrowserUse] 邮箱验证码页未命中按钮，直接跳转到密码页兜底：email=%s", email)
                 page.goto("https://auth.openai.com/create-account/password", wait_until="domcontentloaded", timeout=_timeout_ms(getattr(_cfg, "BROWSER_USE_NAVIGATION_TIMEOUT", 90)))
-                time.sleep(0.6 if _fast_mode() else 1.2)
+                waits.sleep(waits.poll_delay(0.6 if _fast_mode() else 1.2, end - time.time()))
                 continue
             except Exception as exc:
                 logger.info("[BrowserUse] 邮箱验证码页兜底跳转密码页失败：%s", str(exc)[:180])
                 # 不要直接退出，继续等页面自己切到密码页
-                time.sleep(0.8 if _fast_mode() else 1.5)
+                waits.sleep(waits.poll_delay(0.8 if _fast_mode() else 1.5, end - time.time()))
                 continue
         if state not in ("password", "login_password"):
             # 提交邮箱后如果仍显示 /auth/login 但页面其实已经渲染验证码输入框，
@@ -1243,7 +1244,7 @@ def _fill_password_if_present(page, email: str, timeout: int = 25, context=None)
             if _fast_mode() and time.time() - started >= 8:
                 logger.info("[BrowserUse] 未检测到密码页，提前进入 OTP 阶段：state=%s url=%s", state, state_info.get("url") or "-")
                 return None
-            time.sleep(0.15 if _fast_mode() else 0.4)
+            waits.sleep(waits.poll_delay(0.15 if _fast_mode() else 0.4, end - time.time()))
             continue
         if state == "login_password" and _click_passwordless_signup_if_present(page):
             logger.info("[BrowserUse] 检测到密码页，已点击一次性验证码入口：state=%s email=%s", state, email)
@@ -1258,7 +1259,7 @@ def _fill_password_if_present(page, email: str, timeout: int = 25, context=None)
                     return None
                 if state_after.get("state") not in ("password", "login_password"):
                     return None
-                time.sleep(0.2 if _fast_mode() else 0.5)
+                waits.sleep(waits.poll_delay(0.2 if _fast_mode() else 0.5, wait_end - time.time()))
             logger.info("[BrowserUse] 已点击一次性验证码入口，未立即检测到 OTP 页，交给后续 OTP 阶段继续处理")
             return None
         if state == "login_password":
@@ -1371,7 +1372,7 @@ def _fill_password_if_present(page, email: str, timeout: int = 25, context=None)
                         logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
             if state_name not in ("password", "login_password"):
                 return password
-            time.sleep(0.25 if _fast_mode() else 0.5)
+            waits.sleep(waits.poll_delay(0.25 if _fast_mode() else 0.5, wait_end - time.time()))
         return password
     return None
 
@@ -1594,7 +1595,7 @@ def _wait_after_otp(page, timeout: int = 12) -> str:
             return "invalid"
         if "chatgpt.com" in url and "auth" not in url:
             return "accepted"
-        time.sleep(0.25 if _fast_mode() else 0.5)
+        waits.sleep(waits.poll_delay(0.25 if _fast_mode() else 0.5, end - time.time()))
     return "unknown"
 
 
@@ -2067,7 +2068,7 @@ def _force_exit_profile_page(page, deadline: float) -> bool:
                     return True
             except Exception as exc:
                 logger.warning("[BrowserUse] 强制跳出资料页失败：%s: %s", type(exc).__name__, str(exc)[:180])
-        time.sleep(0.8 if _fast_mode() else 1.2)
+        waits.sleep(waits.poll_delay(0.8 if _fast_mode() else 1.2, deadline - time.time()))
     return False
 
 
@@ -2127,7 +2128,7 @@ def _complete_profile_page(page, name: str, birthday: str, timeout: int = 60) ->
                     logger.info("[BrowserUse] 资料页提交后已通过强制跳转退出：%s", _page_url(page) or "-")
                     return True
                 break
-            time.sleep(0.35 if _fast_mode() else 0.8)
+            waits.sleep(waits.poll_delay(0.35 if _fast_mode() else 0.8, end - time.time()))
             continue
 
         if submitted:
@@ -2144,13 +2145,13 @@ def _complete_profile_page(page, name: str, birthday: str, timeout: int = 60) ->
                     logger.info("[BrowserUse] 资料页提交后已通过强制跳转退出：%s", _page_url(page) or "-")
                     return True
                 break
-            time.sleep(0.35 if _fast_mode() else 0.8)
+            waits.sleep(waits.poll_delay(0.35 if _fast_mode() else 0.8, end - time.time()))
             continue
 
         if time.time() - last_log > 2:
             logger.info("[BrowserUse] 等待资料页/登录态：url=%s", _page_url(page) or "-")
             last_log = time.time()
-        time.sleep(0.25 if _fast_mode() else 0.6)
+        waits.sleep(waits.poll_delay(0.25 if _fast_mode() else 0.6, end - time.time()))
 
     url = _page_url(page).lower()
     if any(x in url for x in ("about-you", "profile", "create-account/about", "signup/profile")):
@@ -2264,7 +2265,7 @@ def _browser_use_heartbeat(page, context=None, label: str = ""):
         # 跳转瞬间 pages 可能短暂为空，稍等再取
         for delay in (0.0, 0.35, 0.8):
             if delay:
-                time.sleep(delay)
+                waits.sleep(delay)
             live = _pick_live_page(context, preferred)
             if live is None:
                 continue
@@ -2379,7 +2380,7 @@ def _wait_for_otp_with_browser_heartbeat(page, context, email: str, after_ts: fl
                 break
             logger.info("[BrowserUse][OTP] 本轮未取到验证码，保持云端页面活跃后继续：%s: %s", type(exc).__name__, str(exc)[:220])
             page = _browser_use_heartbeat(page, context=context, label=f"otp-after-{attempt}")
-            time.sleep(0.5 if _fast_mode() else 1.0)
+            waits.sleep(waits.poll_delay(0.5 if _fast_mode() else 1.0, deadline - time.time()))
 
     if last_exc is not None:
         raise last_exc
@@ -2516,7 +2517,7 @@ def _fetch_chatgpt_session(page, context=None, timeout: int = 120) -> dict:
                 if time.time() - last_log > 2:
                     logger.info("[BrowserUse] session 阶段仍在资料页，短暂等待后将强制跳出：url=%s", _page_url(page) or "-")
                     last_log = time.time()
-                time.sleep(0.4 if _fast_mode() else 1.0)
+                waits.sleep(waits.poll_delay(0.4 if _fast_mode() else 1.0, end - time.time()))
                 continue
             if first_not_chatgpt_at is None:
                 first_not_chatgpt_at = time.time()
@@ -2539,7 +2540,7 @@ def _fetch_chatgpt_session(page, context=None, timeout: int = 120) -> dict:
                 logger.info("[BrowserUse] 等待进入 chatgpt.com 或登录态同步：url=%s", _page_url(page) or "-")
                 last_log = time.time()
 
-        time.sleep(0.45 if _fast_mode() else 2)
+        waits.sleep(waits.poll_delay(0.45 if _fast_mode() else 2, end - time.time()))
 
     raise RuntimeError(f"等待 /api/auth/session accessToken 超时，最后响应: {str(last)[:800]}")
 
@@ -2737,7 +2738,7 @@ def run_browser_use_registration(
                     if time.time() - last_verify_log > 5:
                         logger.info("[BrowserUse][OTP] 等待验证码输入页出现：state=%s url=%s", state, state_info.get("url") or "-")
                         last_verify_log = time.time()
-                    time.sleep(0.2 if _fast_mode() else 0.4)
+                    waits.sleep(waits.poll_delay(0.2 if _fast_mode() else 0.4, wait_end - time.time()))
 
                 if current_otp is None:
                     logger.info("[BrowserUse][OTP] 等待验证码：%s（%s/%s）", email, otp_attempt, max_otp_attempts)

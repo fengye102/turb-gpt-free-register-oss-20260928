@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """通过 RoxyBrowser 指纹浏览器执行 Codex OAuth 授权。"""
 from __future__ import annotations
+from core import waits
 
 import logging
 import random
@@ -166,7 +167,7 @@ def _wait_for_callback(driver, timeout: int | None = None) -> str:
                 return callback
         except Exception as _ignored_exc:
             logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
-        time.sleep(0.5)
+        waits.sleep(waits.poll_delay(0.5, end - time.time()))
     raise RuntimeError(f"等待 Codex callback 超时，最后 URL={last_url}")
 
 
@@ -208,7 +209,7 @@ def _maybe_click_passwordless_after_email(driver, email: str, timeout: int = 18)
                     continue
         except Exception as exc:
             logger.debug("[Codex][Browser] 密码页一次性验证码入口探测失败：%s", str(exc)[:140])
-        time.sleep(0.5)
+        waits.sleep(waits.poll_delay(0.5, end - time.time()))
     if clicked:
         logger.info("[Codex][Browser] 已点击一次性验证码入口，未立即检测到 OTP 页，继续后续 OTP 轮询")
 
@@ -230,9 +231,9 @@ def _wait_for_otp_input(driver, timeout: int = 30) -> None:
             if result.get("ok"):
                 logger.info("[Codex][Browser] 仍停留登录密码页，补点一次性验证码入口：%s", result.get("reason"))
                 human_delay("form")
-            time.sleep(6)
+            waits.sleep(waits.poll_delay(6, end - time.time()))
             continue
-        time.sleep(0.8)
+        waits.sleep(waits.poll_delay(0.8, end - time.time()))
     state = _email_otp_page_state(driver)
     logger.warning(
         "[Codex][Browser] 等待 OTP 输入框超时，页面 url=%s inputs=%s buttons=%s 文本前300字=%s",
@@ -284,7 +285,7 @@ def _fill_mfa_challenge_if_present(driver, email: str, timeout: int = 15) -> boo
     while time.time() < end:
         try:
             if not _is_mfa_challenge_page(driver):
-                time.sleep(0.4)
+                waits.sleep(waits.poll_delay(0.4, end - time.time()))
                 continue
             result = driver.execute_script(r"""
             const visible = el => !!el && !!(el.offsetWidth || el.offsetHeight || el.getClientRects().length)
@@ -299,7 +300,7 @@ def _fill_mfa_challenge_if_present(driver, email: str, timeout: int = 15) -> boo
             return {ok:true, input, button};
             """) or {}
             if not result.get("ok"):
-                time.sleep(0.4)
+                waits.sleep(waits.poll_delay(0.4, end - time.time()))
                 continue
             _human_type_text(driver, result.get("input"), code, clear=True)
             human_delay("otp_input")
@@ -309,11 +310,11 @@ def _fill_mfa_challenge_if_present(driver, email: str, timeout: int = 15) -> boo
             while time.time() < wait_end:
                 if not _is_mfa_challenge_page(driver):
                     return True
-                time.sleep(0.4)
+                waits.sleep(waits.poll_delay(0.4, wait_end - time.time()))
             return True
         except Exception as exc:
             logger.debug("[Codex][Browser] MFA challenge 处理失败：%s", str(exc)[:160])
-            time.sleep(0.5)
+            waits.sleep(waits.poll_delay(0.5, end - time.time()))
     return False
 
 
@@ -327,7 +328,7 @@ def _fill_login_password_if_present(driver, email: str, timeout: int = 18) -> st
         if _is_email_verification_page(driver):
             return "email_otp"
         if not _is_login_password_page(driver):
-            time.sleep(0.4)
+            waits.sleep(waits.poll_delay(0.4, end - time.time()))
             continue
         result = driver.execute_script(r"""
         const visible = el => !!el && !!(el.offsetWidth || el.offsetHeight || el.getClientRects().length)
@@ -353,7 +354,7 @@ def _fill_login_password_if_present(driver, email: str, timeout: int = 18) -> st
         """) or {}
         if not result.get("ok"):
             logger.info("[Codex][Browser] 登录密码页未找到输入/提交按钮：%s", result)
-            time.sleep(0.5)
+            waits.sleep(waits.poll_delay(0.5, end - time.time()))
             continue
         _human_type_text(driver, result.get("input"), password, clear=True)
         human_delay("form", minimum=2.0, maximum=3.6)
@@ -368,7 +369,7 @@ def _fill_login_password_if_present(driver, email: str, timeout: int = 18) -> st
                 return "email_otp"
             if not _is_login_password_page(driver):
                 return "next_step"
-            time.sleep(0.5)
+            waits.sleep(waits.poll_delay(0.5, wait_end - time.time()))
         return "next_step"
     return None
 
@@ -526,7 +527,7 @@ def _wait_for_fresh_email_otp(otp_provider, email: str, after_ts: float, used_co
             last_code or "-",
             remaining,
         )
-        time.sleep(min(5, max(1, remaining)))
+        waits.sleep(waits.poll_delay(5, remaining, floor=1))
 
 
 def _install_email_otp_validate_hook(driver) -> None:
@@ -666,7 +667,7 @@ def _wait_after_email_otp_submit(driver, timeout: int = 45) -> str:
                 last_log = time.time()
         except Exception as _ignored_exc:
             logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
-        time.sleep(0.5)
+        waits.sleep(waits.poll_delay(0.5, end - time.time()))
     logger.warning("[Codex][Browser] 邮箱 OTP 后等待跳转超时，当前 url=%s，按验证码无效/过期处理", getattr(driver, "current_url", ""))
     return "invalid"
 
@@ -958,7 +959,7 @@ def _blur_active_input_and_wait(driver, *, label: str = "输入完成") -> None:
         logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
     seconds = random.uniform(1.8, 3.2)
     logger.info("[Codex][Browser] %s，已移开焦点，等待页面处理 %.1f 秒", label, seconds)
-    time.sleep(seconds)
+    waits.sleep(seconds)
 
 
 def _verify_add_phone_value_before_submit(driver, expected_e164: str) -> dict:
@@ -989,7 +990,7 @@ def _wait_page_settle_after_submit() -> None:
     """点击提交后先等待页面处理，再检查发送状态。"""
     seconds = random.uniform(2.0, 4.0)
     logger.info("[Codex][Browser] 已点击提交，等待页面发送/跳转处理 %.1f 秒后检查状态", seconds)
-    time.sleep(seconds)
+    waits.sleep(seconds)
 
 
 def _refresh_add_phone_for_retry(driver, *, reason: str = "") -> None:
@@ -1042,7 +1043,7 @@ def _click_add_phone_continue_button(driver, *, timeout: int = 10) -> dict:
             """)
             if btn:
                 driver.execute_script("arguments[0].scrollIntoView({block:'center'});", btn)
-                time.sleep(random.uniform(0.3, 0.8))
+                waits.sleep(waits.poll_delay(random.uniform(0.3, 0.8), end - time.time()))
                 try:
                     text = str(getattr(btn, 'text', '') or btn.get_attribute('value') or btn.get_attribute('data-dd-action-name') or '').strip()
                 except Exception:
@@ -1071,7 +1072,7 @@ def _click_add_phone_continue_button(driver, *, timeout: int = 10) -> dict:
                         return {"ok": True, "method": "requestSubmit", "text": text, "click_error": str(click_exc)[:160]}
         except Exception as exc:
             last = exc
-        time.sleep(0.25)
+        waits.sleep(waits.poll_delay(0.25, end - time.time()))
     raise RuntimeError(f"submit_missing: add-phone Continue/続行 submit button not found last={last} state={_phone_page_state(driver)}")
 
 
@@ -1101,7 +1102,7 @@ def _wait_after_phone_send(driver, timeout: int = 12) -> str:
     last = {}
     force_submitted = False
     while time.time() < end:
-        time.sleep(1)
+        waits.sleep(waits.poll_delay(1, end - time.time()))
         last = _phone_page_state(driver)
         # 必须优先判断验证码页：页面文案里可能包含 send/limit/check 等词，不能把
         # “Check your phone / Enter the verification code...” 误判成发送失败。
@@ -1121,7 +1122,7 @@ def _wait_after_phone_send(driver, timeout: int = 12) -> str:
                 info = _force_submit_add_phone_form(driver)
                 logger.info("[Codex][Browser] add-phone 点击后仍停留本页，补执行 form.requestSubmit：%s", info)
                 force_submitted = True
-                time.sleep(2)
+                waits.sleep(waits.poll_delay(2, end - time.time()))
     if _is_phone_code_state(last) or _is_phone_code_page(driver):
         return 'code_page'
     if _is_add_phone_page(driver):
@@ -1139,7 +1140,7 @@ def _wait_after_phone_otp_submit(driver, timeout: int = 20) -> str:
     end = time.time() + timeout
     last = {}
     while time.time() < end:
-        time.sleep(1)
+        waits.sleep(waits.poll_delay(1, end - time.time()))
         current = str(getattr(driver, "current_url", "") or "")
         if _is_callback_url(current):
             return "callback"
@@ -1204,7 +1205,7 @@ def _sleep_before_phone_retry(attempt: int, max_retries: int, *, prefix: str = "
         return
     seconds = random.uniform(3.0, 8.0)
     logger.info("%s 换号前随机等待 %.1f 秒", prefix, seconds)
-    time.sleep(seconds)
+    waits.sleep(seconds)
 
 
 def _do_phone_verification_if_present(driver) -> None:
@@ -1220,7 +1221,7 @@ def _do_phone_verification_if_present(driver) -> None:
                 # 如果已经在验证码页，说明手机步骤之前已提交过；继续处理验证码页，不应当跳过。
                 if _is_phone_code_page(driver):
                     break
-                time.sleep(0.5)
+                waits.sleep(waits.poll_delay(0.5, end_detect - time.time()))
             if not (_has_strict_add_phone_form(driver) or _is_phone_code_page(driver)):
                 raise RuntimeError("not_phone_flow")
         except Exception:
@@ -1339,7 +1340,7 @@ def _finish_consent_workspace(driver) -> str:
                 human_delay("form")
                 break
         if not clicked:
-            time.sleep(0.8)
+            waits.sleep(waits.poll_delay(0.8, end - time.time()))
     return _wait_for_callback(driver, timeout=5)
 
 
@@ -1381,7 +1382,7 @@ def clear_roxy_browser_auth_state(driver) -> None:
         driver.get("about:blank")
     except Exception as _ignored_exc:
         logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
-    time.sleep(1.0)
+    waits.sleep(1.0)
     logger.info("[Codex][Browser] 注册窗口登录态清理完成，准备开始 Codex 授权")
 
 def _run_roxy_codex_oauth_once(
