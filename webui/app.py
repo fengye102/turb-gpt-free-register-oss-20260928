@@ -18,23 +18,57 @@ import socket
 import subprocess
 import sys
 import threading
-import time
-import uuid
 from pathlib import Path
 from urllib.parse import urlparse
 
 from flask import Flask, Response, jsonify, make_response, render_template, request
 import pyotp
 
-from core import (codex_retry_service, db, plan_check_service, codex_agent_service, live_check_service,
-                  upi_live_feed, upi_zero_web_service)
+from core import (codex_retry_service, db, plan_check_service, codex_agent_service, live_check_service)
+from webui.api_utils import PreparedDownloads
 from webui.auth import init_auth, register_auth_routes
 from core import registration_service as svc
 from webui import config_editor
 
 logger = logging.getLogger(__name__)
 
+# 「零元提链」是可选组件：core/upi_zero_web_service.py 与 core/upi_live_feed.py 不在当前
+# 源码分发里。缺件时只关掉对应的 /api/upi-zero/* 路由，绝不能让整个 WebUI ImportError 起不来。
+try:
+    from core import upi_live_feed, upi_zero_web_service
+
+    _UPI_ZERO_AVAILABLE = True
+except ImportError:
+    upi_live_feed = None
+    upi_zero_web_service = None
+    _UPI_ZERO_AVAILABLE = False
+    logger.warning(
+        "零元提链组件缺失（core/upi_zero_web_service.py / core/upi_live_feed.py），"
+        "相关接口将返回 503"
+    )
+
 _POOL_SOURCE_VALUES = frozenset(("all", "outlook", "generic_api", "imap", "cloudflare_domain"))
+
+# 生成好的下载包先驻留内存，由 /api/downloads/<id> 取走（过期与上限在 PreparedDownloads 里管）。
+_PREPARED_DOWNLOAD_TTL = 600
+_PREPARED_DOWNLOAD_MAX = 24
+_prepared_downloads = PreparedDownloads(ttl=_PREPARED_DOWNLOAD_TTL, limit=_PREPARED_DOWNLOAD_MAX)
+
+# 页面全是单文件内联 JS，script-src 只能留 unsafe-inline，光靠它挡不住 XSS。
+# 真正有用的是后面几条：connect-src 'self' 断掉把 token 外发的路，
+# object-src/base-uri 'none' 掐掉变形的脚本入口，frame-ancestors 只能靠响应头生效。
+_CSP_POLICY = (
+    "default-src 'self'; "
+    "script-src 'self' 'unsafe-inline'; "
+    "style-src 'self' 'unsafe-inline'; "
+    "img-src 'self' data:; "
+    "font-src 'self' data:; "
+    "connect-src 'self'; "
+    "object-src 'none'; "
+    "base-uri 'none'; "
+    "form-action 'self'; "
+    "frame-ancestors 'none'"
+)
 
 
 def _pool_source_arg(default: str = "outlook") -> str:
@@ -127,8 +161,8 @@ def _compact_account_for_list(row: dict) -> dict:
             api_traffic = (promo_obj or {}).get("api_traffic") if isinstance(promo_obj, dict) else None
             if isinstance(api_traffic, dict) and api_traffic:
                 out["api_traffic"] = api_traffic
-        except Exception:
-            pass
+        except Exception as _ignored_exc:
+            logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
 
     # 这些是列表固定列直接展示字段。
     for key in (
@@ -256,13 +290,22 @@ def _read_log_tail(path, *, max_bytes: int, default_running: bool = False, runni
     if callable(running_fn):
         try:
             running = bool(running_fn())
-        except Exception:
-            pass
+        except Exception as _ignored_exc:
+            logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
     return {"ok": True, "log": content, "running": running}
 
 def create_app(auth_code: str | None = None) -> Flask:
     app = Flask(__name__, template_folder="templates")
-    _prepared_downloads: dict[str, dict] = {}
+
+    @app.after_request
+    def _security_headers(response: Response):
+        """HTML 响应补安全头（只作用于页面，下载与 JSON 接口不受影响）。"""
+        if (response.mimetype or "").startswith("text/html"):
+            response.headers.setdefault("Content-Security-Policy", _CSP_POLICY)
+            response.headers.setdefault("X-Content-Type-Options", "nosniff")
+            response.headers.setdefault("Referrer-Policy", "same-origin")
+            response.headers.setdefault("X-Frame-Options", "DENY")
+        return response
 
     @app.after_request
     def _compress_json_response(response: Response):
@@ -294,23 +337,11 @@ def create_app(auth_code: str | None = None) -> Flask:
         return response
 
     def _put_prepared_download(content: bytes, filename: str, mimetype: str = "application/zip") -> str:
-        now = time.time()
-        # 顺手清理 10 分钟前的临时下载，避免内存堆积。
-        for k, v in list(_prepared_downloads.items()):
-            if now - float(v.get("created_at") or 0) > 600:
-                _prepared_downloads.pop(k, None)
-        download_id = uuid.uuid4().hex
-        _prepared_downloads[download_id] = {
-            "content": bytes(content),
-            "filename": filename,
-            "mimetype": mimetype,
-            "created_at": now,
-        }
-        return download_id
+        return _prepared_downloads.put(content, filename, mimetype)
 
     @app.get("/api/downloads/<download_id>")
     def api_prepared_download(download_id: str):
-        item = _prepared_downloads.pop(str(download_id or ""), None)
+        item = _prepared_downloads.take(download_id)
         if not item:
             return jsonify({"ok": False, "error": "下载已过期或不存在，请重新生成"}), 404
         content = item.get("content") or b""
@@ -1156,8 +1187,18 @@ def create_app(auth_code: str | None = None) -> Flask:
                         "ready": ready, "tail": tail,
                         "code_file": str(root / "tools" / "_otp_codes" / (safe + ".txt"))})
 
+    def _upi_zero_unavailable():
+        """提链组件缺件时的统一应答，避免前端只拿到 404 无从判断。"""
+        return jsonify({
+            "ok": False,
+            "error": "零元提链组件未包含在当前源码分发中"
+                     "（缺少 core/upi_zero_web_service.py 或 core/upi_live_feed.py）",
+        }), 503
+
     @app.get("/api/upi-zero/candidates")
     def api_upi_zero_candidates():
+        if not _UPI_ZERO_AVAILABLE:
+            return _upi_zero_unavailable()
         try:
             page = int(request.args.get("page", "1"))
             page_size = int(request.args.get("page_size", "50"))
@@ -1172,6 +1213,8 @@ def create_app(auth_code: str | None = None) -> Flask:
 
     @app.post("/api/upi-zero/extract")
     def api_upi_zero_extract():
+        if not _UPI_ZERO_AVAILABLE:
+            return _upi_zero_unavailable()
         data = request.get_json(silent=True) or {}
         if not isinstance(data, dict):
             return jsonify({"ok": False, "error": "请求体无效"}), 400
@@ -1197,6 +1240,8 @@ def create_app(auth_code: str | None = None) -> Flask:
 
     @app.get("/api/upi-zero/status/<int:account_id>")
     def api_upi_zero_status(account_id: int):
+        if not _UPI_ZERO_AVAILABLE:
+            return _upi_zero_unavailable()
         if account_id not in upi_zero_web_service.source_ids():
             return jsonify({"ok": False, "error": "账号不在零元池"}), 404
         acc = db.get_account(account_id)
@@ -1208,6 +1253,8 @@ def create_app(auth_code: str | None = None) -> Flask:
 
     @app.get("/api/upi-zero/log/<int:account_id>")
     def api_upi_zero_log(account_id: int):
+        if not _UPI_ZERO_AVAILABLE:
+            return _upi_zero_unavailable()
         try:
             after = int(request.args.get("after", "0"))
             if after < 0:
@@ -1228,6 +1275,8 @@ def create_app(auth_code: str | None = None) -> Flask:
     @app.get("/api/upi-zero/live-log")
     def api_upi_zero_live_log():
         """全池提链的实时日志尾巴：读 sweep 自己的日志文件，增量返回。"""
+        if not _UPI_ZERO_AVAILABLE:
+            return _upi_zero_unavailable()
         try:
             after = int(request.args.get("after", "0"))
             tail = int(request.args.get("tail", "0"))
@@ -1695,8 +1744,8 @@ def create_app(auth_code: str | None = None) -> Flask:
                     if local_filename:
                         try:
                             db.mark_codex_exported(local_filename)
-                        except Exception:
-                            pass
+                        except Exception as _ignored_exc:
+                            logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
                 except Exception as exc:
                     errors.append({"id": acc_id, "email": email, "error": f"{type(exc).__name__}: {exc}"})
 
@@ -2610,8 +2659,8 @@ def create_app(auth_code: str | None = None) -> Flask:
         try:
             acc = db.get_account_by_email(email) or {}
             data["running"] = bool(str(acc.get("totp_setup_status") or "") in {"queued", "running"}) or twofa_service.is_running(int(acc.get("id") or 0))
-        except Exception:
-            pass
+        except Exception as _ignored_exc:
+            logger.debug("忽略异常 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
         return jsonify(data)
 
     @app.get("/api/accounts/<int:acc_id>/change-email-log")

@@ -31,13 +31,30 @@ from urllib.parse import quote, urljoin
 
 from bs4 import BeautifulSoup
 
-from core.mailcom_client import (
-    MailComError,
-    MailComLightClient,
-    _CONTEXT_CACHE,
-    _http_session,
-    _mailcom_proxy,
+_MAILCOM_MISSING = (
+    "缺少 core/mailcom_client.py：mail.com 改密组件未包含在当前源码分发中"
 )
+
+
+def _mailcom():
+    """按需取得 mailcom 客户端模块。
+
+    该组件不在 OSS 源码分发里，所以不能放在模块顶层导入 —— 否则任何 import 链碰到
+    本模块就会整片炸掉。改成惰性导入：模块保持可导入，真正调用改密时才抛可读的缺件错误。
+    """
+    try:
+        from core import mailcom_client
+    except ImportError as exc:
+        raise RuntimeError(_MAILCOM_MISSING) from exc
+    return mailcom_client
+
+
+def _mask(value: str, keep: int = 2) -> str:
+    """日志只留首尾几位，避免密码明文落进日志文件。"""
+    text = str(value or "")
+    if len(text) <= keep * 2:
+        return "*" * len(text)
+    return f"{text[:keep]}{'*' * (len(text) - keep * 2)}{text[-keep:]}"
 
 logger = logging.getLogger(__name__)
 
@@ -95,7 +112,7 @@ def _extract_form(
     soup = BeautifulSoup(html_text, "html.parser")
     form = soup.find("form", id=form_id) if form_id else soup.find("form")
     if not form:
-        raise MailComError(f"mail.com 页面未找到表单: {form_id or '(first)'}")
+        raise _mailcom().MailComError(f"mail.com 页面未找到表单: {form_id or '(first)'}")
     action = form.get("action") or ""
     payload: dict[str, str] = {}
     for input_node in form.find_all("input"):
@@ -117,7 +134,7 @@ def _extract_srttkn(*values: str) -> str:
         match = re.search(pattern, haystack)
         if match:
             return unescape(match.group(1))
-    raise MailComError("mail.com passwordChange 页面未找到 srttkn")
+    raise _mailcom().MailComError("mail.com passwordChange 页面未找到 srttkn")
 
 
 def _password_headers(
@@ -190,7 +207,7 @@ def ensure_mailcom_account_session(
     login.raise_for_status()
     login_text = getattr(login, "text", "") or ""
     if 'id="loginForm"' in login_text or "login-failed" in getattr(login, "url", ""):
-        raise MailComError("mail.com account 登录失败，无法进入密码修改页")
+        raise _mailcom().MailComError("mail.com account 登录失败，无法进入密码修改页")
 
 
 def change_mailcom_password(
@@ -267,7 +284,7 @@ def change_mailcom_password(
         text,
         re.I,
     ):
-        raise MailComError("mail.com 修改密码失败，页面返回错误提示")
+        raise _mailcom().MailComError("mail.com 修改密码失败，页面返回错误提示")
 
 
 # ============================================================
@@ -296,21 +313,22 @@ def change_account_password(
     generated = not bool((new_password or "").strip())
     new_password = (new_password or "").strip() or generate_mailcom_password(12)
     old_password = account.password
-    # 发送变更前：明确打出旧密码与即将提交的随机/指定新密码（测活批量改密入口）
+    # 变更前后都留痕，但密码只记掩码：日志文件不该是明文密码的第二份副本。
     logger.info(
         "[MailCom][测活/批量改密] 变更前 email=%s old_password=%s "
         "new_password=%s generated=%s (即将发送 passwordChange)",
         account.username,
-        old_password,
-        new_password,
+        _mask(old_password),
+        _mask(new_password),
         generated,
     )
-    proxy = proxy or _mailcom_proxy()
+    mc = _mailcom()
+    proxy = proxy or mc._mailcom_proxy()
     try:
-        client = MailComLightClient(
+        client = mc.MailComLightClient(
             account.username,
             account.password,
-            session=_http_session(proxy=proxy),
+            session=mc._http_session(proxy=proxy),
         )
         client.login()
         change_mailcom_password(client, account.password, new_password)
@@ -319,8 +337,8 @@ def change_account_password(
             "[MailCom][测活/批量改密] 变更失败 email=%s old_password=%s "
             "attempted_new_password=%s err=%s",
             account.username,
-            old_password,
-            new_password,
+            _mask(old_password),
+            _mask(new_password),
             exc,
         )
         raise
@@ -328,8 +346,8 @@ def change_account_password(
         "[MailCom][测活/批量改密] 变更后 email=%s old_password=%s "
         "new_password=%s status=success",
         account.username,
-        old_password,
-        new_password,
+        _mask(old_password),
+        _mask(new_password),
     )
     return account, new_password
 
@@ -356,36 +374,35 @@ def change_mailcom_password_for_email(
     new_password = (new_password or "").strip() or generate_mailcom_password(12)
 
     # 取当前账号上下文（内存缓存 → DB fallback）
-    from core.mailcom_client import get_account_context
-
-    account_ctx = get_account_context(email)
+    mc = _mailcom()
+    account_ctx = mc.get_account_context(email)
     if account_ctx is None:
-        raise MailComError(
+        raise _mailcom().MailComError(
             f"未找到 {email} 的 mail.com 账号上下文，无法改密。"
             f"请确认该邮箱已通过 pick_account 领取或已写入邮箱池。"
         )
 
     current_password = account_ctx.password
     if not current_password:
-        raise MailComError(f"{email} 的当前密码为空，无法改密")
+        raise _mailcom().MailComError(f"{email} 的当前密码为空，无法改密")
 
-    # 发送变更前：先打出变更前密码与即将提交的随机/指定新密码（自动化注册前改密入口）
+    # 变更前后都留痕，但密码只记掩码（自动化注册前改密入口）。
     logger.info(
         "[MailCom][自动化改密] 变更前 email=%s old_password=%s "
         "new_password=%s generated=%s (即将发送 passwordChange)",
         email,
-        current_password,
-        new_password,
+        _mask(current_password),
+        _mask(new_password),
         generated,
     )
 
     # 改密
-    _proxy = proxy or _mailcom_proxy()
+    _proxy = proxy or mc._mailcom_proxy()
     try:
-        client = MailComLightClient(
+        client = mc.MailComLightClient(
             email,
             current_password,
-            session=_http_session(proxy=_proxy),
+            session=mc._http_session(proxy=_proxy),
         )
         client.login()
         change_mailcom_password(client, current_password, new_password)
@@ -394,8 +411,8 @@ def change_mailcom_password_for_email(
             "[MailCom][自动化改密] 变更失败 email=%s old_password=%s "
             "attempted_new_password=%s err=%s",
             email,
-            current_password,
-            new_password,
+            _mask(current_password),
+            _mask(new_password),
             exc,
         )
         raise
@@ -403,14 +420,12 @@ def change_mailcom_password_for_email(
         "[MailCom][自动化改密] 变更后 email=%s old_password=%s "
         "new_password=%s status=success",
         email,
-        current_password,
-        new_password,
+        _mask(current_password),
+        _mask(new_password),
     )
 
     # 回写内存缓存，后续 fetch_latest_otp 会用新密码
-    from core.mailcom_client import MailComAccount
-
-    _CONTEXT_CACHE[email] = MailComAccount(email=email, password=new_password)
+    mc._CONTEXT_CACHE[email] = mc.MailComAccount(email=email, password=new_password)
 
     # 回写 DB（email_pool.password）
     try:
@@ -420,7 +435,7 @@ def change_mailcom_password_for_email(
         logger.info(
             "[MailCom][自动化改密] %s 新密码已回写 DB email_pool.password new_password=%s",
             email,
-            new_password,
+            _mask(new_password),
         )
     except Exception as exc:
         logger.warning(
@@ -492,7 +507,7 @@ if __name__ == "__main__":
         _sys.exit(2)
     _email, _old_pwd = parts
     _new_pwd = _sys.argv[2] if len(_sys.argv) > 2 else ""
-    _CONTEXT_CACHE[_email] = Account(username=_email, password=_old_pwd)  # type: ignore[assignment]
+    _mailcom()._CONTEXT_CACHE[_email] = Account(username=_email, password=_old_pwd)  # type: ignore[assignment]
     try:
         result = change_mailcom_password_for_email(_email, new_password=_new_pwd)
         print(f"新密码: {result}")
