@@ -770,6 +770,73 @@ def _load_outlook() -> list[dict]:
     return _load_collection("outlook")
 
 
+def _read_pool_row(source: str, email: str) -> dict | None:
+    """按来源+邮箱读一行邮箱池记录（大小写不敏感，多行取最早）。"""
+    _ensure_sqlite()
+    with _conn_scope() as conn:
+        row = conn.execute(
+            "SELECT payload FROM email_pool WHERE source=? AND email=? COLLATE NOCASE ORDER BY id ASC LIMIT 1",
+            (str(source), str(email or "")),
+        ).fetchone()
+    return json.loads(row["payload"]) if row else None
+
+
+def _save_pool_row(row: dict, source: str) -> None:
+    """只更新 email_pool 的一行（按 id + source）。
+
+    池子的 claim/release 原来都是「整表读、改一行、整表写回」，
+    每次注册占一封邮箱就要重写整张 email_pool；批量跑号时这是最大的一处写放大。
+    """
+    _ensure_sqlite()
+    rid = int(row.get("id") or 0)
+    if rid <= 0:
+        raise ValueError("邮箱池行缺少 id，无法单行更新")
+    with _conn_scope() as conn, conn:
+        conn.execute(
+            "UPDATE email_pool SET payload=?, email=?, status=?, archived=?, updated_at=? "
+            "WHERE id=? AND source=?",
+            (json.dumps(row, ensure_ascii=False), str(row.get("email") or ""), str(row.get("status") or ""),
+             int(bool(row.get("archived"))), str(row.get("updated_at") or _now()), rid, str(source)),
+        )
+
+
+def _claim_next_pool_row(source: str) -> dict | None:
+    """领取该来源下 id 最小的可用邮箱并标记 used（单行读写，不再整表遍历）。"""
+    _ensure_sqlite()
+    with _conn_scope() as conn:
+        found = conn.execute(
+            "SELECT payload FROM email_pool WHERE source=? AND status='available' ORDER BY id ASC LIMIT 1",
+            (str(source),),
+        ).fetchone()
+    if found is None:
+        return None
+    row = json.loads(found["payload"])
+    row["status"] = "used"
+    row["used_at"] = _now()
+    row["note"] = None
+    _save_pool_row(row, source)
+    return row
+
+def _next_pool_id() -> int:
+    """邮箱池下一个 id（SQL 自算，不整表加载）。"""
+    _ensure_sqlite()
+    with _conn_scope() as conn:
+        return int(conn.execute("SELECT COALESCE(MAX(id), 0) + 1 FROM email_pool").fetchone()[0])
+
+
+def _insert_pool_row(row: dict, source: str) -> None:
+    """单行插入邮箱池记录（域名邮箱首次登记用）。"""
+    _ensure_sqlite()
+    with _conn_scope() as conn, conn:
+        conn.execute(
+            "INSERT INTO email_pool(id,email,source,status,archived,created_at,updated_at,payload) "
+            "VALUES(?,?,?,?,?,?,?,?)",
+            (int(row.get("id") or 0), str(row.get("email") or ""), str(source),
+             str(row.get("status") or ""), int(bool(row.get("archived"))),
+             str(row.get("created_at") or _now()), str(row.get("updated_at") or _now()),
+             json.dumps(row, ensure_ascii=False)),
+        )
+
 def _save_outlook(rows: list[dict]) -> None:
     _save_collection("outlook", rows)
 
@@ -2601,22 +2668,14 @@ def import_registered_email_accounts(records: list[dict], source: str | None) ->
 def claim_next_outlook() -> dict | None:
     """原子领取一个可用 Outlook 账号并标记为 used。"""
     with _LOCK:
-        rows = sorted(_load_outlook(), key=lambda x: int(x.get("id") or 0))
-        row = next((r for r in rows if r.get("status") == "available"), None)
-        if row is None:
-            return None
-        row["status"] = "used"
-        row["used_at"] = _now()
-        row["note"] = None
-        _save_outlook(rows)
-        return _decorate_outlook(row)
+        row = _claim_next_pool_row(_EMAIL_SOURCES["outlook"])
+        return _decorate_outlook(row) if row else None
 
 
 def release_outlook(email: str, status: str = "available", note: str | None = None) -> None:
     """把账号状态改回 available，或标记为 used/failed/disabled。"""
     with _LOCK:
-        rows = _load_outlook()
-        row = _find_by_email(rows, email)
+        row = _read_pool_row(_EMAIL_SOURCES["outlook"], email)
         if row is None:
             return
         row["status"] = status
@@ -2626,23 +2685,22 @@ def release_outlook(email: str, status: str = "available", note: str | None = No
             row["used_at"] = row.get("used_at") or _now()
         if note is not None:
             row["note"] = note
-        _save_outlook(rows)
+        _save_pool_row(row, _EMAIL_SOURCES["outlook"])
 
 
 def release_unconsumed_outlook(email: str, note: str | None = None) -> bool:
     """原子回收未生成本地账号且仍为 used 的 Outlook 邮箱。"""
     with _LOCK:
-        if _find_by_email(_load_accounts(), email) is not None:
+        if _read_account_row_by_email(email) is not None:
             return False
-        rows = _load_outlook()
-        row = _find_by_email(rows, email)
+        row = _read_pool_row(_EMAIL_SOURCES["outlook"], email)
         if row is None or row.get("status") != "used":
             return False
         row["status"] = "available"
         row["used_at"] = None
         if note is not None:
             row["note"] = note
-        _save_outlook(rows)
+        _save_pool_row(row, _EMAIL_SOURCES["outlook"])
         return True
 
 
@@ -2746,22 +2804,14 @@ def import_generic_api_emails(records: list[dict]) -> tuple[int, int]:
 def claim_next_generic_api_email() -> dict | None:
     """原子领取一个可用通用 API 邮箱并标记为 used。"""
     with _LOCK:
-        rows = sorted(_load_generic_api_emails(), key=lambda x: int(x.get("id") or 0))
-        row = next((r for r in rows if r.get("status") == "available"), None)
-        if row is None:
-            return None
-        row["status"] = "used"
-        row["used_at"] = _now()
-        row["note"] = None
-        _save_generic_api_emails(rows)
-        return _decorate_generic_api_email(row)
+        row = _claim_next_pool_row(_EMAIL_SOURCES["generic_api"])
+        return _decorate_generic_api_email(row) if row else None
 
 
 def release_generic_api_email(email: str, status: str = "available", note: str | None = None) -> None:
     """把通用 API 邮箱状态改回 available，或标记为 failed/used。"""
     with _LOCK:
-        rows = _load_generic_api_emails()
-        row = _find_by_email(rows, email)
+        row = _read_pool_row(_EMAIL_SOURCES["generic_api"], email)
         if row is None:
             return
         row["status"] = status
@@ -2771,7 +2821,7 @@ def release_generic_api_email(email: str, status: str = "available", note: str |
             row["used_at"] = row.get("used_at") or _now()
         if note is not None:
             row["note"] = note
-        _save_generic_api_emails(rows)
+        _save_pool_row(row, _EMAIL_SOURCES["generic_api"])
 
 
 def release_unconsumed_generic_api_email(email: str, note: str | None = None) -> bool:
@@ -2849,19 +2899,13 @@ def import_imap_emails(records: list[dict]) -> tuple[int, int]:
 
 def claim_next_imap_email() -> dict | None:
     with _LOCK:
-        rows = sorted(_load_imap_emails(), key=lambda x: int(x.get("id") or 0))
-        row = next((r for r in rows if r.get("status") == "available"), None)
-        if row is None:
-            return None
-        row["status"], row["used_at"], row["note"] = "used", _now(), None
-        _save_imap_emails(rows)
-        return _decorate_imap_email(row)
+        row = _claim_next_pool_row(_EMAIL_SOURCES["imap"])
+        return _decorate_imap_email(row) if row else None
 
 
 def release_imap_email(email: str, status: str = "available", note: str | None = None) -> None:
     with _LOCK:
-        rows = _load_imap_emails()
-        row = _find_by_email(rows, email)
+        row = _read_pool_row(_EMAIL_SOURCES["imap"], email)
         if row is None:
             return
         row["status"] = status
@@ -2871,21 +2915,20 @@ def release_imap_email(email: str, status: str = "available", note: str | None =
             row["used_at"] = row.get("used_at") or _now()
         if note is not None:
             row["note"] = note
-        _save_imap_emails(rows)
+        _save_pool_row(row, _EMAIL_SOURCES["imap"])
 
 
 def release_unconsumed_imap_email(email: str, note: str | None = None) -> bool:
     with _LOCK:
-        if _find_by_email(_load_accounts(), email) is not None:
+        if _read_account_row_by_email(email) is not None:
             return False
-        rows = _load_imap_emails()
-        row = _find_by_email(rows, email)
+        row = _read_pool_row(_EMAIL_SOURCES["imap"], email)
         if row is None or row.get("status") != "used":
             return False
         row["status"], row["used_at"] = "available", None
         if note is not None:
             row["note"] = note
-        _save_imap_emails(rows)
+        _save_pool_row(row, _EMAIL_SOURCES["imap"])
         return True
 
 
@@ -3577,29 +3620,26 @@ def _find_domain_email(rows: list[dict], email: str) -> dict | None:
 def claim_next_domain_email(email: str) -> dict:
     """记录一个新的域名邮箱地址到池中（标记为 available）。"""
     with _LOCK:
-        rows = _load_domain_pool()
-        if _find_domain_email(rows, email):
+        existing = _read_pool_row(_EMAIL_SOURCES["domain"], email)
+        if existing:
             # 已存在，直接返回
-            row = _find_domain_email(rows, email)
-            return row
+            return existing
         row = {
-            "id": _next_id(rows),
+            "id": _next_pool_id(),
             "email": email,
             "status": "available",
             "used_at": None,
             "note": None,
             "created_at": _now(),
         }
-        rows.append(row)
-        _save_domain_pool(rows)
+        _insert_pool_row(row, _EMAIL_SOURCES["domain"])
         return dict(row)
 
 
 def release_domain_email(email: str, status: str = "available", note: str | None = None) -> None:
     """更新域名邮箱状态。"""
     with _LOCK:
-        rows = _load_domain_pool()
-        row = _find_domain_email(rows, email)
+        row = _read_pool_row(_EMAIL_SOURCES["domain"], email)
         if row is None:
             return
         row["status"] = status
@@ -3609,23 +3649,22 @@ def release_domain_email(email: str, status: str = "available", note: str | None
             row["used_at"] = row.get("used_at") or _now()
         if note is not None:
             row["note"] = note
-        _save_domain_pool(rows)
+        _save_pool_row(row, _EMAIL_SOURCES["domain"])
 
 
 def release_unconsumed_domain_email(email: str, note: str | None = None) -> bool:
     """原子回收未生成本地账号且仍为 used 的域名邮箱。"""
     with _LOCK:
-        if _find_by_email(_load_accounts(), email) is not None:
+        if _read_account_row_by_email(email) is not None:
             return False
-        rows = _load_domain_pool()
-        row = _find_domain_email(rows, email)
+        row = _read_pool_row(_EMAIL_SOURCES["domain"], email)
         if row is None or row.get("status") != "used":
             return False
         row["status"] = "available"
         row["used_at"] = None
         if note is not None:
             row["note"] = note
-        _save_domain_pool(rows)
+        _save_pool_row(row, _EMAIL_SOURCES["domain"])
         return True
 
 
