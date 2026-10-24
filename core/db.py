@@ -88,7 +88,10 @@ def _ensure_storage() -> None:
 
 
 _TLS = threading.local()
-_ALL_CONNS: list[sqlite3.Connection] = []
+# 线程 id -> 连接。原先是 list，close_thread_conn 每次都要 O(n) 线性扫描并整体重建列表，
+# 线程一多就是纯浪费；用 dict 后按线程 id 直接命中，O(1)。
+# 注意线程 id 在线程结束后会被复用，所以取用时必须核对「是不是同一个连接对象」。
+_ALL_CONNS: dict[int, sqlite3.Connection] = {}
 _CONNS_LOCK = threading.Lock()
 
 
@@ -99,16 +102,22 @@ def _sqlite_conn() -> sqlite3.Connection:
     （空连接 0.16ms，空连接上跑一条 SELECT 1 就要 2.1ms，连发三条 PRAGMA 还是 2.1ms），
     而复用连接后单次查询 ~0.001ms。原来 27 个调用点各自建连，WebUI 一次列表请求
     要白等几十毫秒。WAL / busy_timeout 该设的仍然设，只是不再按调用次数设。
+
+    本线程连接用完不回收就是泄漏（WebUI 每个请求一个线程，实测每请求漏 1 个连接 + 2 个 fd），
+    所以 WebUI 侧由 `webui/app.py` 的 teardown_appcontext 调 close_thread_conn 收尾。
     """
     _ensure_storage()
     path = str(_active_sqlite_path())
     cached = getattr(_TLS, "conn", None)
-    if cached is not None and getattr(_TLS, "path", None) == path:
-        try:
-            cached.execute("SELECT 1")
-            return cached
-        except sqlite3.Error:
-            close_thread_conn()
+    if cached is not None:
+        if getattr(_TLS, "path", None) == path:
+            try:
+                cached.execute("SELECT 1")
+                return cached
+            except sqlite3.Error as _ignored_exc:
+                logger.debug("线程缓存连接已失效，重建 %s: %s", type(_ignored_exc).__name__, _ignored_exc)
+        # 连接已坏或换了库：先把旧连接彻底关掉，否则 dict 里会留下没人管的句柄。
+        close_thread_conn()
     conn = sqlite3.connect(path, timeout=30)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA busy_timeout=30000")
@@ -117,7 +126,7 @@ def _sqlite_conn() -> sqlite3.Connection:
     _TLS.conn = conn
     _TLS.path = path
     with _CONNS_LOCK:
-        _ALL_CONNS.append(conn)
+        _ALL_CONNS[threading.get_ident()] = conn
     return conn
 
 
@@ -135,8 +144,9 @@ def close_thread_conn() -> None:
     if conn is None:
         return
     with _CONNS_LOCK:
-        if any(item is conn for item in _ALL_CONNS):
-            _ALL_CONNS[:] = [item for item in _ALL_CONNS if item is not conn]
+        ident = threading.get_ident()
+        if _ALL_CONNS.get(ident) is conn:
+            _ALL_CONNS.pop(ident, None)
     try:
         conn.close()
     except sqlite3.Error as _ignored_exc:
@@ -146,7 +156,8 @@ def close_thread_conn() -> None:
 @atexit.register
 def _close_all_conns() -> None:
     with _CONNS_LOCK:
-        conns, _ALL_CONNS[:] = list(_ALL_CONNS), []
+        conns = list(_ALL_CONNS.values())
+        _ALL_CONNS.clear()
     for conn in conns:
         try:
             conn.close()
@@ -801,20 +812,47 @@ def _save_pool_row(row: dict, source: str) -> None:
 
 
 def _claim_next_pool_row(source: str) -> dict | None:
-    """领取该来源下 id 最小的可用邮箱并标记 used（单行读写，不再整表遍历）。"""
+    """原子领取该来源下 id 最小的可用邮箱并标记 used（单行读写，不再整表遍历）。
+
+    原来这里是「SELECT 一行 → Python 里改 payload → _save_pool_row 再 UPDATE」三步，
+    中间没有任何事务：两个进程（或两个进程里的不同线程）可以同时 SELECT 到同一行，
+    然后各自 UPDATE 一遍，同一个邮箱就被发给了两个注册任务。实测 20 条池子、
+    3 个进程并发领取，总共领了 24~30 次，其中 4~8 个邮箱被重复领取。
+
+    现在整段是**一条** UPDATE：`WHERE id=(SELECT ... LIMIT 1)` 让「选中哪一行」和
+    「把它标记成 used」在同一个语句里完成，SQLite 对单条语句的写是原子的，别的进程
+    要么看到更新前、要么看到更新后，不可能两个人都选中同一行。RETURNING 把改完的
+    payload 直接带回来，省掉再查一次（也就省掉再查时那行已被别人改掉的可能）。
+
+    ⛔ 不要改回 `BEGIN IMMEDIATE` + 先 SELECT：显式 BEGIN 要求「当前没有活跃事务」，
+    而这个连接是按线程复用的，调用方线程上完全可能还挂着一个未提交的写事务
+    （比如上层 `with conn:` 里连调两个 db 函数），那时 `BEGIN IMMEDIATE` 直接抛
+    `cannot start a transaction within a transaction`。单条语句没有这个问题。
+
+    payload 用 json_set 就地改三个键（status/used_at/note），其余字段（含 copy_line
+    等派生字段）原样保留，写回语义与 _save_pool_row 一致；列上的 status/updated_at
+    也照原来的规则一起落库。
+
+    ⚠ 返回的 payload 形状随行的来源而不同：`_insert_pool_row` / 域名邮箱登记建的行
+    本来就带 updated_at 键，`import_*_accounts` 建的行则没有。这里一律原样保留、
+    不做增删 —— 旧实现也是这么透传的，调用方看到什么就是库里存了什么。
+    """
     _ensure_sqlite()
-    with _conn_scope() as conn:
-        found = conn.execute(
-            "SELECT payload FROM email_pool WHERE source=? AND status='available' ORDER BY id ASC LIMIT 1",
-            (str(source),),
+    now = _now()
+    with _conn_scope() as conn, conn:
+        changed = conn.execute(
+            "UPDATE email_pool "
+            "SET status='used', "
+            "    payload=json_set(payload, '$.status', 'used', '$.used_at', ?, '$.note', NULL), "
+            "    updated_at=? "
+            "WHERE id=(SELECT id FROM email_pool "
+            "          WHERE source=? AND status='available' ORDER BY id ASC LIMIT 1) "
+            "RETURNING payload",
+            (now, now, str(source)),
         ).fetchone()
-    if found is None:
+    if changed is None:
         return None
-    row = json.loads(found["payload"])
-    row["status"] = "used"
-    row["used_at"] = _now()
-    row["note"] = None
-    _save_pool_row(row, source)
+    row = json.loads(changed["payload"])
     return row
 
 def _next_pool_id() -> int:
