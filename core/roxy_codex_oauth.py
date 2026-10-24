@@ -1095,7 +1095,7 @@ def _force_submit_add_phone_form(driver) -> dict:
         return {ok:true, method: btn ? 'requestSubmit(button)' : 'requestSubmit(form)', url: location.href};
         """) or {}
     except Exception as exc:
-        return {ok:false, reason:f'{type(exc).__name__}: {exc}', url:getattr(driver, 'current_url', '')}
+        return {"ok": False, "reason": f"{type(exc).__name__}: {exc}", "url": getattr(driver, "current_url", "")}
 
 
 def _wait_after_phone_send(driver, timeout: int = 12) -> str:
