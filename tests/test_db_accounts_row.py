@@ -80,3 +80,58 @@ def test_single_row_save_refreshes_copy_line(isolated_db):
     assert db.update_account_extra(acc_id, {"registration_password": "new-pw"}) is True
     fresh = db.get_account(acc_id)
     assert fresh["copy_line"] == db._account_line(fresh)
+
+
+def test_claim_plan_check_by_email_is_single_row(isolated_db):
+    db = isolated_db
+    target = db.insert_account(email="m@x.com", access_token="tm")
+    other = db.insert_account(email="n@x.com", access_token="tn")
+    _mark_payload(db, other, "keep-me")
+
+    assert db.claim_account_plan_check(email="M@X.COM", trigger="manual") is True
+
+    assert db.get_account(other)["marker"] == "keep-me"
+    assert db.get_account(target)["plan_check_status"] == "queued"
+    # 已排队且未超时：再占一次必须被拒
+    assert db.claim_account_plan_check(email="m@x.com") is False
+
+
+def test_update_accounts_note_bulk_touches_only_listed(isolated_db):
+    db = isolated_db
+    target = db.insert_account(email="o@x.com", access_token="to")
+    other = db.insert_account(email="p@x.com", access_token="tp")
+    _mark_payload(db, other, "keep-me")
+
+    updated, skipped = db.update_accounts_note([target, 999999], "批量备注")
+
+    assert [item["id"] for item in updated] == [target]
+    assert skipped and skipped[0]["id"] == 999999
+    assert db.get_account(other)["marker"] == "keep-me", "批量改备注把别的行整表冲掉了"
+    assert db.get_account(target)["note"] == "批量备注"
+
+
+def test_archive_accounts_bulk_touches_only_listed(isolated_db):
+    db = isolated_db
+    target = db.insert_account(email="s@x.com", access_token="ts")
+    other = db.insert_account(email="t@x.com", access_token="tt")
+    _mark_payload(db, other, "keep-me")
+
+    updated, skipped = db.archive_accounts([target], True)
+
+    assert [item["id"] for item in updated] == [target]
+    assert skipped == []
+    assert db.get_account(other)["marker"] == "keep-me"
+    assert db.get_account(target)["archived"] is True
+
+
+def test_delete_account_by_email_keeps_others(isolated_db):
+    db = isolated_db
+    target = db.insert_account(email="q@x.com", access_token="tq")
+    other = db.insert_account(email="r@x.com", access_token="tr")
+    _mark_payload(db, other, "keep-me")
+
+    assert db.delete_account(email="Q@x.com") is True
+
+    assert db.get_account(target) is None
+    assert db.get_account(other)["marker"] == "keep-me"
+    assert db.delete_account(acc_id=999999) is False

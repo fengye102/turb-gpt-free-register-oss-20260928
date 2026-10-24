@@ -432,7 +432,7 @@ def _read_account_row_by_email(email: str) -> dict | None:
     _ensure_sqlite()
     with _conn_scope() as conn:
         row = conn.execute(
-            "SELECT payload FROM accounts WHERE email=? COLLATE NOCASE ORDER BY id DESC LIMIT 1",
+            "SELECT payload FROM accounts WHERE email=? COLLATE NOCASE ORDER BY id ASC LIMIT 1",
             (str(email or ""),),
         ).fetchone()
     return json.loads(row["payload"]) if row else None
@@ -1297,13 +1297,10 @@ def claim_account_plan_check(
 ) -> bool:
     """原子占用账号的套餐查询；已有未超时查询时返回 False。"""
     with _LOCK:
-        accounts = _load_accounts()
         target_email = (email or "").lower()
-        row = next((
-            r for r in accounts
-            if (acc_id is not None and int(r.get("id") or 0) == int(acc_id))
-            or (target_email and (r.get("email") or "").lower() == target_email)
-        ), None)
+        # 按 id 或邮箱只取这一行：原来是把整张 accounts 表读进来再逐行比。
+        row = _read_account_row(acc_id) if acc_id is not None else (
+            _read_account_row_by_email(target_email) if target_email else None)
         if row is None:
             return False
 
@@ -1326,7 +1323,7 @@ def claim_account_plan_check(
         row["plan_check_completed_at"] = None
         row["plan_check_error"] = None
         row["updated_at"] = now
-        _save_accounts(accounts)
+        _save_account_row(row)
         return True
 
 
@@ -1413,13 +1410,10 @@ def update_account_plan_check(acc_id: int | None = None, email: str | None = Non
     """更新账号套餐/Plus 试用资格查询结果。"""
     result = result or {}
     with _LOCK:
-        accounts = _load_accounts()
         target_email = (email or "").lower()
-        row = next((
-            r for r in accounts
-            if (acc_id is not None and int(r.get("id") or 0) == int(acc_id))
-            or (target_email and (r.get("email") or "").lower() == target_email)
-        ), None)
+        # 按 id 或邮箱只取这一行：原来是把整张 accounts 表读进来再逐行比。
+        row = _read_account_row(acc_id) if acc_id is not None else (
+            _read_account_row_by_email(target_email) if target_email else None)
         if row is None:
             return False
 
@@ -1924,12 +1918,12 @@ def list_accounts_page(
 
 
 def get_account(acc_id: int) -> dict | None:
-    row = next((r for r in _load_accounts() if int(r.get("id") or 0) == int(acc_id)), None)
+    row = _read_account_row(acc_id)
     return _decorate_account(row) if row else None
 
 
 def get_account_by_email(email: str) -> dict | None:
-    row = _find_by_email(_load_accounts(), email)
+    row = _read_account_row_by_email(email)
     return _decorate_account(row) if row else None
 
 
@@ -1950,8 +1944,7 @@ def update_account_note(acc_id: int, note: str) -> bool:
 def claim_account_email_change(acc_id: int, source: str, trigger: str = "manual") -> bool:
     """原子占用账号邮箱换绑任务。"""
     with _LOCK:
-        rows = _load_accounts()
-        row = next((r for r in rows if int(r.get("id") or 0) == int(acc_id)), None)
+        row = _read_account_row(acc_id)
         if row is None or row.get("email_change_status") in {"queued", "running"}:
             return False
         now = _now()
@@ -1967,8 +1960,7 @@ def claim_account_email_change(acc_id: int, source: str, trigger: str = "manual"
 
 def mark_account_email_change_running(acc_id: int, new_email: str) -> bool:
     with _LOCK:
-        rows = _load_accounts()
-        row = next((r for r in rows if int(r.get("id") or 0) == int(acc_id)), None)
+        row = _read_account_row(acc_id)
         if row is None or row.get("email_change_status") not in {"queued", "running"}:
             return False
         row.update({"email_change_status": "running", "email_change_new_email": new_email,
@@ -1983,8 +1975,7 @@ def finish_account_email_change(
 ) -> bool:
     """写回换绑结果；成功时保留初始邮箱并将账号主邮箱切换为新邮箱。"""
     with _LOCK:
-        rows = _load_accounts()
-        row = next((r for r in rows if int(r.get("id") or 0) == int(acc_id)), None)
+        row = _read_account_row(acc_id)
         if row is None:
             return False
         now = _now()
@@ -2046,8 +2037,7 @@ def update_account_liveness(acc_id: int, result: dict | None = None) -> bool:
     """写回账号查活结果；成功时同步刷新最新 access_token 和账号基础信息。"""
     result = result or {}
     with _LOCK:
-        rows = _load_accounts()
-        row = next((r for r in rows if int(r.get("id") or 0) == int(acc_id)), None)
+        row = _read_account_row(acc_id)
         if row is None:
             return False
 
@@ -2281,23 +2271,23 @@ def update_accounts_note(account_ids: list[int] | None, note: str) -> tuple[list
     updated: list[dict] = []
     skipped: list[dict] = []
     with _LOCK:
-        rows = _load_accounts()
         seen_ids: set[int] = set()
         now = _now()
         text = str(note or "")
-        for row in rows:
-            row_id = int(row.get("id") or 0)
-            if row_id not in ids:
+        # 只按 id 逐行取，不再把整张表读进来过滤。
+        for row_id in sorted(ids):
+            row = _read_account_row(row_id)
+            if row is None:
                 continue
             row["note"] = text
             row["note_updated_at"] = now
             row["updated_at"] = now
+            _save_account_row(row)
             updated.append({"id": row_id, "email": row.get("email"), "note": text, "note_updated_at": now})
             seen_ids.add(row_id)
         for item in ids - seen_ids:
             skipped.append({"id": item, "reason": "账号不存在"})
-        if updated:
-            _save_accounts(rows)
+
     return updated, skipped
 
 
@@ -2321,22 +2311,22 @@ def archive_accounts(account_ids: list[int] | None, archived: bool = True) -> tu
     updated: list[dict] = []
     skipped: list[dict] = []
     with _LOCK:
-        rows = _load_accounts()
         seen_ids: set[int] = set()
         now = _now()
-        for row in rows:
-            row_id = int(row.get("id") or 0)
-            if row_id not in ids:
+        # 只按 id 逐行取，不再把整张表读进来过滤。
+        for row_id in sorted(ids):
+            row = _read_account_row(row_id)
+            if row is None:
                 continue
             row["archived"] = bool(archived)
             row["archived_at"] = now if archived else None
             row["updated_at"] = now
+            _save_account_row(row)
             updated.append({"id": row_id, "email": row.get("email"), "archived": bool(archived), "archived_at": row.get("archived_at")})
             seen_ids.add(row_id)
         for item in ids - seen_ids:
             skipped.append({"id": item, "reason": "账号不存在"})
-        if updated:
-            _save_accounts(rows)
+
     return updated, skipped
 
 
@@ -2349,22 +2339,19 @@ def count_accounts() -> int:
 def delete_account(acc_id: int | None = None, email: str | None = None) -> bool:
     """从 SQLite 删除一个已注册账号记录，并清理关联的 Agent 凭证。"""
     with _LOCK:
-        rows = _load_accounts()
         target_email = (email or "").lower()
-        new_rows = []
-        deleted_ids = []
-        deleted = False
-        for row in rows:
-            match_id = acc_id is not None and int(row.get("id") or 0) == int(acc_id)
-            match_email = bool(target_email) and (row.get("email") or "").lower() == target_email
-            if match_id or match_email:
-                deleted = True
-                deleted_ids.append(int(row.get("id") or 0))
-                continue
-            new_rows.append(row)
-        if not deleted:
+        # 由 SQL 自己找出要删的行；原来是把整表读进内存过滤后整表写回。
+        _ensure_sqlite()
+        with _conn_scope() as conn:
+            matched = conn.execute(
+                "SELECT id FROM accounts WHERE id=? OR (email=? COLLATE NOCASE AND ?<>'')",
+                (int(acc_id or 0), target_email, target_email),
+            ).fetchall()
+        deleted_ids = [int(item["id"]) for item in matched]
+        if not deleted_ids:
             return False
-        _save_accounts(new_rows)
+        for row_id in deleted_ids:
+            _delete_account_row(row_id)
         if deleted_ids:
             _ensure_sqlite()
             with _conn_scope() as conn:
