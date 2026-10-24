@@ -26,6 +26,16 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 PACKAGES = ("core", "config", "webui", "tools")
+
+# Windows 的 stdout/stderr 默认跟随控制台代码页（cp1252/cp936），输出中文会直接
+# UnicodeEncodeError 崩掉（CI 的 windows-latest 就是这种情况）。这里把两个流强制
+# 重配成 UTF-8；errors="replace" 保证即使目标终端不支持也不会再抛异常。
+# 老版本 Python / 被替换成非 TextIOWrapper 的流没有 reconfigure，静默跳过。
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+    except (AttributeError, ValueError):
+        pass
 SKIP_DIRS = {"vendor", ".venv", "node_modules", "__pycache__", ".git", "build", "dist"}
 
 
@@ -101,6 +111,22 @@ class _Visitor(ast.NodeVisitor):
             self.visit(handler)
         for child in list(node.orelse) + list(node.finalbody):
             self.visit(child)
+
+    def visit_If(self, node: ast.If) -> None:
+        """`if TYPE_CHECKING:` 里的引用运行期根本不执行，不可能造成 ImportError。
+
+        这类引用（例如可选组件的类型注解）一律算 optional，不算硬悬空。
+        """
+        test = node.test
+        guarded = (isinstance(test, ast.Name) and test.id == "TYPE_CHECKING") or (
+            isinstance(test, ast.Attribute) and test.attr == "TYPE_CHECKING"
+        )
+        if guarded:
+            self.optional += 1
+        for child in list(node.body) + list(node.orelse):
+            self.visit(child)
+        if guarded:
+            self.optional -= 1
 
     def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
         module = node.module or ""

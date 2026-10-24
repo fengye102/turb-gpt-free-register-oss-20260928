@@ -11,6 +11,7 @@ from flask import Blueprint, jsonify, request
 
 from core import db
 from core import registration_service as svc
+from webui.api_utils import compact_job_for_list
 
 bp = Blueprint("jobs", __name__)
 

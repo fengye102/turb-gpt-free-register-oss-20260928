@@ -6,9 +6,19 @@ from tools import gen_env_example
 
 
 def test_env_example_matches_generator(project_root):
-    expected = gen_env_example.render().replace("\n", "\r\n")
+    """生成器统一以 LF 落盘（配合 .gitattributes 的 eol=lf），
+    所以这里直接逐字节比较 render() 的结果 —— 不能再按 CRLF 期待，
+    否则 Windows/Linux 两个平台会给出不同结论。
+    """
+    expected = gen_env_example.render()
     actual = (project_root / ".env.example").read_bytes().decode("utf-8")
     assert actual == expected, "运行 python tools/gen_env_example.py 重新生成"
+
+
+def test_env_example_has_no_crlf(project_root):
+    """文件里不能出现 CR，否则 Windows 生成/检出的文件会与 Linux 不一致。"""
+    raw = (project_root / ".env.example").read_bytes()
+    assert b"\r" not in raw, ".env.example 必须用 LF 行尾（检查 .gitattributes / 生成器 newline）"
 
 
 def test_env_example_covers_every_editable_field(project_root):

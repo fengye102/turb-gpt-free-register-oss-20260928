@@ -90,6 +90,17 @@ def create_app(auth_code: str | None = None) -> Flask:
     ):
         app.register_blueprint(_bp)
 
+    @app.teardown_appcontext
+    def _close_db_conn(_exc):
+        """每个请求结束就关掉本线程的 SQLite 连接。
+
+        连接是按线程缓存的（见 core/db.py:_sqlite_conn），而 Flask 的线程池会为
+        每个请求开新线程、请求结束后线程退出，缓存的连接没人回收 —— 实测
+        /api/summary 打 200 次就多出 200 个连接、400 个 fd，600 次再翻三倍。
+        这里在请求收尾时显式关掉，连接数就只跟「同时在跑的线程数」有关。
+        """
+        db.close_thread_conn()
+
     @app.after_request
     def _security_headers(response: Response):
         """HTML 响应补安全头（只作用于页面，下载与 JSON 接口不受影响）。"""

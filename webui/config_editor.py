@@ -704,6 +704,11 @@ _FIELD_BY_KEY = {f["key"]: f for f in EDITABLE_FIELDS}
 # ============================================================
 
 def _config_path(filename: str) -> Path:
+    # 反斜杠在 POSIX 上只是普通文件名字符，`..\email.py` 会被 resolve 成
+    # config/ 里的一个怪文件名而不报错 —— 但同样的输入到了 Windows 就是目录穿越。
+    # 守卫必须与平台无关，所以显式拒绝反斜杠与 NUL。
+    if "\\" in filename or "\x00" in filename:
+        raise ValueError(f"非法配置路径: {filename}")
     path = (_CONFIG_DIR / filename).resolve()
     # 防目录穿越：必须落在 config/ 下
     if _CONFIG_DIR not in path.parents:

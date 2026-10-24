@@ -1,0 +1,25 @@
+# ruff 门禁配置。
+#
+# 目标：拦住「引用了不存在名字」这类会在运行期炸掉的缺陷（F821），不制造格式噪音。
+# 现状统计（配置写入时实测）：
+#   - 最长行 1569 字符，>120 的有 492 行 —— line-length 只是为将来启用 E501 预留，
+#     当前没有选 E501，不会因为历史长行报错。
+#   - F401（unused import）50 条、F811（redefinition）6 条，分散在 20+ 个文件里，
+#     属于历史清理，与 bug 无关；开了会让门禁立刻变红且噪音淹没真问题，故暂不启用。
+#     清理完之后再把 "F401"/"F811" 加进 select 即可。
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+exclude = [
+    "vendor",
+    ".venv",
+    "__pycache__",
+    ".git",
+    ".ruff_cache",
+    ".pytest_cache",
+]
+
+[tool.ruff.lint]
+# 只启用真正会拦住 bug 的规则：F821 = 使用了未定义的名字。
+# 这些缺陷在运行时才会炸（NameError），静态检查是唯一低成本的防线。
+select = ["F821"]

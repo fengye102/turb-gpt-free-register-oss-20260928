@@ -27,9 +27,16 @@ import secrets
 import string
 from dataclasses import dataclass
 from html import unescape
+from typing import TYPE_CHECKING
 from urllib.parse import quote, urljoin
 
 from bs4 import BeautifulSoup
+
+if TYPE_CHECKING:
+    # 仅供类型注解使用（`from __future__ import annotations` 下注解不求值）。
+    # core/mailcom_client.py 是可选组件，不在 OSS 源码分发里，运行时导入会炸掉整条
+    # import 链，所以只在静态检查期可见 —— 与下面 _mailcom() 的惰性导入同一套约定。
+    from core.mailcom_client import MailComLightClient
 
 _MAILCOM_MISSING = (
     "缺少 core/mailcom_client.py：mail.com 改密组件未包含在当前源码分发中"

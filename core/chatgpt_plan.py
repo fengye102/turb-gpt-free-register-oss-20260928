@@ -91,7 +91,6 @@ def _local_proxy_status(proxy: str) -> tuple[bool, bool, str | None]:
 #
 #    这里读一份打分台账（_probe/plan_exit_scores.json，由脚本从库里统计生成），
 #    优先挑「历史 0 元率高、样本够」的出口。台账不存在就退回随机。
-_PLAN_SCORE_FILE = _PROJECT_ROOT / "_probe" / "plan_exit_scores.json" if False else None
 
 
 def _scored_plan_proxy() -> str:
