@@ -1,0 +1,9 @@
+# 仓库里全部文本文件统一用 LF 落盘/检出，Windows 上也不做 CRLF 转换。
+# 原因：CI 在 ubuntu-latest 和 windows-latest 上跑同一套脚本，tools/gen_env_example.py
+# 生成的 .env.example 是逐字节比较的 —— 只要 Windows 检出成 CRLF，--check 就会红。
+* text=auto eol=lf
+
+# Windows 专用脚本必须保持 CRLF，否则 cmd.exe 解析 .bat/.cmd 会出问题。
+*.bat   text eol=crlf
+*.cmd   text eol=crlf
+*.ps1   text eol=crlf

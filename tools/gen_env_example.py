@@ -27,6 +27,16 @@ if str(ROOT) not in sys.path:
 
 TARGET = ROOT / ".env.example"
 
+# Windows 的 stdout/stderr 默认跟随控制台代码页（cp1252/cp936），输出中文会直接
+# UnicodeEncodeError 崩掉（CI 的 windows-latest 就是这种情况）。这里把两个流强制
+# 重配成 UTF-8；errors="replace" 保证即使目标终端不支持也不会再抛异常。
+# 老版本 Python / 被替换成非 TextIOWrapper 的流没有 reconfigure，静默跳过。
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+    except (AttributeError, ValueError):
+        pass
+
 HEADER = """# 复制成 .env 后按需填写；真实凭据不要提交。
 #
 # 本文件由 tools/gen_env_example.py 从 webui/config_editor.py 的配置白名单生成，
@@ -73,8 +83,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--check", action="store_true", help="只检查是否与白名单同步")
     args = parser.parse_args(argv)
 
-    # 读写成字节，绕开 Path.write_text 会把换行再按平台转换一次的坑。
-    text = render().replace("\n", "\r\n")
+    # 统一用 LF 落盘：显式 newline="\n" 让 Windows 上也不做换行转换，
+    # 这样 Windows 生成的文件和 Linux/macOS 逐字节一致（配合 .gitattributes 的
+    # eol=lf，CI 双平台的 --check 才不会因为行尾不同而红）。
+    text = render()
     if args.check:
         current = TARGET.read_bytes().decode("utf-8") if TARGET.exists() else ""
         if current != text:
@@ -83,7 +95,8 @@ def main(argv: list[str] | None = None) -> int:
         print(".env.example 已同步")
         return 0
 
-    TARGET.write_bytes(text.encode("utf-8"))
+    with TARGET.open("w", encoding="utf-8", newline="\n") as fp:
+        fp.write(text)
     from webui import config_editor
 
     print(f"已写入 {TARGET.name}（{len(config_editor.EDITABLE_FIELDS)} 个配置项）")
