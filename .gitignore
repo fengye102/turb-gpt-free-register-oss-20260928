@@ -35,3 +35,19 @@ accounts/
 
 # gh / 工具运行时状态（沙箱里 HOME 指向仓库时会被写出来）
 /.local/
+
+# 凭证存储目录：core/db.py:43-44 明确把 codex 账号与 agent 私钥落在这里
+# （codex-*.json 含 auth、codex-agent-*.json 含 agent 私钥），绝不能进版本库。
+codex_accounts/
+codex_agent_accounts/
+
+# 覆盖率产物（pytest-cov 默认写在仓库根）
+.coverage
+.coverage.*
+
+# 运行时产物：webui.sh 会在仓库根建 run/（webui.pid）和 logs/（webui.log）；
+# webui/views/accounts.py 的 _open_browser_paths() 以 webui/ 为根往 webui/logs/
+# 写 open-browser-<id>.log。所以两条都写成不锚定的目录规则，覆盖这两个位置。
+run/
+logs/
+
